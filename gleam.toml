@@ -1,0 +1,12 @@
+name = "gleames"
+version = "0.1.0"
+
+# https://gleam.run/writing-gleam/gleam-toml/. 
+
+[dependencies]
+gleam_stdlib = "~> 0.34 or ~> 1.0"
+esgleam = "~> 0.6"
+
+[dev-dependencies]
+gleeunit = "~> 1.0"
+gleam_otp = "~> 0.10"
