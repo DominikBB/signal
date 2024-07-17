@@ -1,31 +1,19 @@
-import gleeunit
-import gleeunit/should
-import gleam/option.{type Option, None, Some}
-import gleam/result.{map, try}
 import gleam/io
 import gleam/list.{append}
-import gleames/handlers.{type CommandHandler}
+import gleam/option.{type Option, None, Some}
+import gleam/result.{map, try}
 import gleames/aggregate.{type Aggregate}
-import test_model
+import gleames/handlers.{type CommandHandler}
+import gleeunit
+import gleeunit/should
 import mock_handlers
+import test_model
 
 pub fn main() {
   gleeunit.main()
 }
 
 pub fn can_generate_state_test() {
-  todo
-}
-
-pub fn can_generate_projection_test() {
-  todo
-}
-
-pub fn will_snapshot_state_test() {
-  todo
-}
-
-pub fn will_snapshot_projection_test() {
   todo
 }
 

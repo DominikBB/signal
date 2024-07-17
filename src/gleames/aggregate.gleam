@@ -7,12 +7,11 @@ import gleames/internal/helpers.{handle_events}
 
 /// Definition of the event store functions
 /// 
-pub type Aggregate(aggregate, event, command, aggregate_error) {
+pub type Aggregate(aggregate, event, command) {
   Aggregate(
-    handle: fn(String, command) ->
-      Result(aggregate, GleamesError(aggregate_error)),
-    create: fn(command) -> Result(aggregate, GleamesError(aggregate_error)),
-    get: fn(String) -> Result(aggregate, GleamesError(aggregate_error)),
+    handle: fn(String, command) -> Result(aggregate, String),
+    create: fn(command) -> Result(aggregate, String),
+    get: fn(String) -> Result(aggregate, String),
   )
 }
 
@@ -21,12 +20,9 @@ pub fn create_aggregate(
   event_handler: EventHandler(aggregate, event),
   persistance: PersistanceHandler(aggregate, event),
   default_aggregate: aggregate,
-) -> Aggregate(aggregate, event, command, aggregate_error) {
+) -> Aggregate(aggregate, event, command) {
   Aggregate(
-    handle: fn(id: String, command: command) -> Result(
-      aggregate,
-      GleamesError(aggregate_error),
-    ) {
+    handle: fn(id: String, command: command) -> Result(aggregate, String) {
       id
       |> persistance.get_aggregate()
       |> map(handle_events(event_handler, _, default_aggregate))
@@ -34,11 +30,8 @@ pub fn create_aggregate(
       |> try(persistance.push_events(_))
       |> map(handle_events(event_handler, _, default_aggregate))
     },
-    create: fn(command: command) -> Result(
-      aggregate,
-      GleamesError(aggregate_error),
-    ) {
-      command_handler(_, command)
+    create: fn(command: command) -> Result(aggregate, String) {
+      command_handler(default_aggregate, command)
       |> try(persistance.push_events(_))
       |> map(handle_events(event_handler, _, default_aggregate))
     },
