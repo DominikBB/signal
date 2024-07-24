@@ -1,5 +1,5 @@
-import gleam/option.{type Option, None, Some}
 import gleam/list.{append}
+import gleam/option.{type Option, None, Some}
 
 pub type ProductId =
   String
