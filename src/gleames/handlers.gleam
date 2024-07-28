@@ -1,4 +1,5 @@
 import gleam/erlang/process.{type Subject}
+import gleam/otp/task.{type Task}
 import gleames/event.{type Event}
 
 /// A function that applies an enum of commands and might produce events
@@ -22,6 +23,7 @@ pub type PersistanceHandler(event) {
 
 /// Consumers are called when an event is produced
 /// 
-pub type Consumer(event) {
+pub type Subscriber(event) {
   Consumer(Subject(Event(event)))
+  Policy(Task(event))
 }

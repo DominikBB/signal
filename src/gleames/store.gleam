@@ -15,7 +15,11 @@ type InnerStore(event) {
 
 pub type StoreOperations(event) {
   Push(event: List(event.Event(event)))
-  Get(reply_with: Subject(Result(List(event), String)), aggregate_id: String)
+  Get(
+    reply_with: Subject(Result(List(event.Event(event)), String)),
+    aggregate_id: String,
+  )
+  Exists(reply_with: Subject(Result(Bool, String)), aggregate_id: String)
   // Used by the persistance layer to confirm the event is stored
   PersistanceState(id: String, completed: Bool)
   Shutdown

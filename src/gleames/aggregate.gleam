@@ -1,7 +1,8 @@
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process.{type Selector, type Subject}
 import gleam/otp/actor
 import gleam/string
 import gleames/bus.{type Bus}
+import gleames/configuration
 import gleames/event.{type Event}
 import gleames/handlers
 
@@ -22,8 +23,49 @@ pub opaque type InnerAggregate(aggregate, command, event) {
 pub type AggregateMessage(aggregate, command, event) {
   State(reply_with: Subject(aggregate))
   Identity(reply_with: Subject(String))
-  HandleCommand(reply_with: Subject(Result(List(Event(event)), Nil)), command)
+  HandleCommand(
+    reply_with: Subject(Result(List(Event(event)), String)),
+    command,
+  )
   Shutdown
+}
+
+pub fn aggregate_init(
+  id: String,
+  events: List(event.Event(event)),
+  config: configuration.AggregateConfiguration(aggregate, command, event),
+  bus: Bus(event),
+) {
+  fn() {
+    let aggregate =
+      InnerAggregate(
+        id: id,
+        version: 0,
+        state: config.initial_state,
+        command_handler: config.command_handler,
+        event_handler: config.event_handler,
+        bus: bus,
+      )
+
+    actor.Ready(
+      state: initial_hydration(aggregate, events, config.event_handler),
+      selector: process.new_selector(),
+    )
+  }
+}
+
+pub fn initial_hydration(
+  agg: InnerAggregate(aggregate, command, event),
+  events: List(Event(event)),
+  handle: handlers.EventHandler(aggregate, event),
+) {
+  case events {
+    [] -> agg
+    [next] -> InnerAggregate(..agg, version: agg.version + 1, state: agg.state)
+    [next, ..rest] ->
+      InnerAggregate(..agg, version: agg.version + 1, state: agg.state)
+      |> initial_hydration(rest, handle)
+  }
 }
 
 pub fn handle_aggregate_operations(
@@ -50,8 +92,8 @@ pub fn handle_aggregate_operations(
           process.send(client, Ok(new_state.events))
           actor.continue(InnerAggregate(..agg, state: new_state.agg.state))
         }
-        _ -> {
-          process.send(client, _)
+        Error(msg) -> {
+          process.send(client, Error(msg))
           actor.continue(agg)
         }
       }
@@ -85,7 +127,7 @@ fn update_aggregate(
   current
   |> hydrate_event(event)
   |> send_event_to_bus(current)
-  |> hydrate_aggregate(current)
+  |> hydrate_aggregate_with_update(current)
 }
 
 fn hydrate_event(current: StateUpdate(aggregate, command, event), event: event) {
@@ -97,7 +139,7 @@ fn hydrate_event(current: StateUpdate(aggregate, command, event), event: event) 
   )
 }
 
-fn hydrate_aggregate(
+fn hydrate_aggregate_with_update(
   event: Event(event),
   current: StateUpdate(aggregate, command, event),
 ) {
