@@ -134,9 +134,7 @@ pub fn with_persistance_layer(
   EmitConfig(..config, persistance_handler: Some(persist))
 }
 
-pub fn start(
-  config: EmitConfig(aggregate, command, event),
-) -> Result(Emit(aggregate, command, event), actor.StartError) {
+pub fn start(config: EmitConfig(aggregate, command, event)) {
   use service <- result.try(emit_init(config))
 
   actor.start(Nil, emit_handler(service))
@@ -186,13 +184,11 @@ type EmitService(aggregate, command, event) {
 }
 
 fn emit_init(config: EmitConfig(aggregate, command, event)) {
-  use persistor <- result.try(set_up_persistance_handler(
-    config.persistance_handler,
+  use store_handler <- result.try(result.replace_error(
+    set_up_store_handler(config.persistance_handler),
+    actor.InitTimeout,
   ))
-  use store <- result.try(actor.start(
-    #(False, [], []),
-    store_handler(persistor),
-  ))
+  use store <- result.try(actor.start(#(False, [], []), store_handler))
   use bus <- result.try(actor.start(Nil, bus_handler(config.subscribers, store)))
   use pool <- result.try(actor.start(
     dict.new(),
@@ -203,7 +199,7 @@ fn emit_init(config: EmitConfig(aggregate, command, event)) {
 }
 
 fn emit_handler(cfg: EmitService(aggregate, command, event)) {
-  fn(message: EmitMessages(aggregate, command, event), state: Nil) {
+  fn(message: EmitMessages(aggregate, command, event), _state: Nil) {
     case message {
       GetPool(s) -> {
         process.send(s, cfg.pool)
@@ -479,7 +475,7 @@ pub type BusMessage(event) {
 }
 
 pub fn bus_handler(subscribers: List(Subscriber(event)), store: Store(event)) {
-  fn(message: BusMessage(event), state: Nil) {
+  fn(message: BusMessage(event), _state: Nil) {
     case message {
       PushEvent(event) -> {
         notify_subscribers(event, subscribers)
@@ -536,7 +532,7 @@ pub opaque type StoreMessages(event) {
   ShutdownStore
 }
 
-fn set_up_persistance_handler(
+fn set_up_store_handler(
   persistor: Option(process.Subject(PersistanceLayerMessages(event))),
 ) {
   case persistor {
@@ -544,7 +540,7 @@ fn set_up_persistance_handler(
     None -> {
       case actor.start([], in_memory_persistance_handler) {
         Ok(s) -> Ok(store_handler(s))
-        _ -> Error("Failed to spin up in memory persistance!")
+        _ -> Error("Failed to spin up the in memory persistance layer!")
       }
     }
   }
@@ -562,7 +558,7 @@ fn store_handler(persistor: process.Subject(PersistanceLayerMessages(event))) {
             actor.continue(#(True, [e, ..wal], processing))
           #(False, wal, processing) -> {
             process.send(persistor, StoreEvents([e, ..wal]))
-            actor.continue(#(True, [], list.concat([wal, processing])))
+            actor.continue(#(True, [], list.append(wal, processing)))
           }
         }
       }
@@ -576,15 +572,14 @@ fn store_handler(persistor: process.Subject(PersistanceLayerMessages(event))) {
         process.send(s, result)
         actor.continue(state)
       }
-      PersistanceState(processed, completed) -> {
+      PersistanceState(processed, _) -> {
         let #(_, wal, events_being_processed) = state
-        let processing_list =
-          list.pop(events_being_processed, fn(e) { list.contains(processed, e) })
+        let #(_, not_yet_processed) =
+          list.partition(events_being_processed, fn(e) {
+            list.contains(processed, e)
+          })
 
-        case processing_list {
-          [] -> actor.continue(#(False, wal, []))
-          _ -> actor.continue(#(True, wal, processing_list))
-        }
+        actor.continue(#(False, wal, not_yet_processed))
       }
       ShutdownStore -> actor.Stop(process.Normal)
     }
@@ -593,7 +588,25 @@ fn store_handler(persistor: process.Subject(PersistanceLayerMessages(event))) {
 
 fn in_memory_persistance_handler(
   message: PersistanceLayerMessages(event),
-  store: List(Event(event)),
+  state: List(Event(event)),
 ) {
-  todo
+  case message {
+    GetStoredEvents(s, aggregate_id) -> {
+      process.send(
+        s,
+        Ok(list.filter(state, fn(e) { e.aggregate_id == aggregate_id })),
+      )
+      actor.continue(state)
+    }
+    IsIdentityAvailable(s, aggregate_id) -> {
+      case list.all(state, fn(e) { e.aggregate_id != aggregate_id }) {
+        True -> process.send(s, Ok(True))
+        False -> process.send(s, Ok(False))
+      }
+
+      actor.continue(state)
+    }
+    StoreEvents(events) -> actor.continue(list.append(state, events))
+    ShutdownPersistanceLayer -> actor.Stop(process.Normal)
+  }
 }
