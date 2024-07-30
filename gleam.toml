@@ -1,5 +1,5 @@
-name = "gleames"
-version = "0.1.0"
+name = "emit"
+version = "0.0.1"
 
 [dependencies]
 gleam_stdlib = ">= 0.39.0 and < 1.0.0"
