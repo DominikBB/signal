@@ -1,3 +1,13 @@
+// ! Should test:
+// - Subscribers consistency
+// - Write ahead log functionality
+// - Storage consistency
+// - Aggregate versioning consistency
+// - Aggregate mailbox scaling
+// - Aggregate pool management
+// - Time to handle messages in Pool, Aggregate, Bus, Store
+// !
+
 // import gleam/io
 // import gleam/list.{append}
 // import gleam/option.{type Option, None, Some}
