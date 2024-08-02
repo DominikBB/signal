@@ -75,9 +75,40 @@ pub fn new(intensity: Intensity, test_what: TestWhat) {
     )
     |> create_aggregates_with_intensity(intensity, test_what)
 
-  list.map(sim.list_of_aggregates, fn(agg) {
-    generate_commands_or_events(agg, test_what, generator_seed)
-  })
+  Simulation(
+    ..sim,
+    list_of_aggregates: generate_aggregate_commands_or_events(
+      [],
+      generator_seed,
+      sim.list_of_aggregates,
+    ),
+  )
+}
+
+fn generate_aggregate_commands_or_events(
+  processed_aggregates: List(
+    SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent),
+  ),
+  seed: seed.Seed,
+  aggregates: List(SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent)),
+) {
+  let #(_, new_seed) = random.int(1, 2) |> random.step(seed)
+  case aggregates {
+    [] -> processed_aggregates
+    [next] -> [
+      generate_commands_or_events(next, TestCommands, seed),
+      ..processed_aggregates
+    ]
+    [next, ..rest] ->
+      generate_aggregate_commands_or_events(
+        [
+          generate_commands_or_events(next, TestCommands, seed),
+          ..processed_aggregates
+        ],
+        new_seed,
+        rest,
+      )
+  }
 }
 
 fn create_aggregates_with_intensity(
@@ -117,14 +148,10 @@ fn assign_data_to_commands(
   sim: SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent),
   seed: seed.Seed,
 ) {
+  let package_data =
+    generate_delivery_package_data([], seed, list.length(sim.commands) * 4)
   sim.commands
-  |> list.map(fn(c) {
-    generate_command_data(
-      c,
-      seed,
-      generate_delivery_package_data([], seed, list.length(sim.commands) * 4),
-    )
-  })
+  |> list.map(fn(c) { generate_command_data(c, seed, package_data) })
 }
 
 fn generate_command_data(
@@ -238,7 +265,7 @@ fn add_quirks_to_commands(
   generated_commands: List(#(Option(CommandQuirks), fixture.DeliveryCommand)),
 ) {
   let #(_, new_seed) = random.int(1, 2) |> random.step(seed)
-  case generate_commands {
+  case generated_commands {
     [] -> quirky_commands
     [next] -> [discover_quirk(next, seed), ..quirky_commands]
     [next, ..rest] ->
