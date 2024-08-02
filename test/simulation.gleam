@@ -3,35 +3,37 @@ import fixture
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option}
 import gleam/set
 import prng/random
 import prng/seed
-import van_route.{type DeliveryCommand, type DeliveryEvent}
 import youid/uuid
 
 pub opaque type Simulation(command, event) {
   Simulation(
     sim_seed: Int,
     generator_seed: seed.Seed,
-    test_with: set.Set(TestWith),
-    list_of_aggregates: List(SimState(command, event)),
+    list_of_aggregates: List(SimAggregate(command, event)),
   )
 }
 
-pub opaque type SimState(command, event) {
-  SimState(
+pub opaque type SimAggregate(command, event) {
+  SimAggregate(
     id: String,
-    events: List(#(SimEventType, emit.Event(event))),
-    commands: List(#(CommandThat, command)),
+    events: List(#(Option(EventQuirks), emit.Event(event))),
+    commands: List(#(Option(CommandQuirks), command)),
   )
 }
 
-pub type SimEventType {
+/// Used only for tests that do not involve commands
+pub type EventQuirks {
+  IsLarge
   Duplicate
   DuplicateId
 }
 
-pub type CommandThat {
+/// Used to determine which quirk, if any, should be attached to a particular command
+pub type CommandQuirks {
   CreatesOneEvent
   CreatesDataHeavyEvent
   CreatesManyEvents
@@ -42,18 +44,6 @@ pub type CommandThat {
 
 pub type TestWith {
   ManyAggregates
-
-  DuplicatedEvent
-  EventWithDuplicateId
-  EventVersionsMissing
-
-  CommandThatCreatesOneEvent
-  CommandThatCreatesDataHeavyEvent
-  CommandThatCreatesManyEvents
-  CommandThatCreatesNoEvents
-  CommandThatErrors
-  CommandThatCrashes
-
   SubscriberConsumers
   SubscriberPolicies
 }
@@ -66,41 +56,31 @@ pub type Intensity {
 }
 
 pub type TestWhat {
-  Events
-  Commands
-  EventsAndCommands
+  TestEvents
+  TestCommands
 }
 
-pub fn new(test_with_random: Int) {
+pub fn new(test_with_random: Int, intensity: Intensity, test_what: TestWhat) {
   let sim_seed = uuid.v7() |> uuid.time_posix_microsec()
   io.print("Simulating with seed: " <> int.to_string(sim_seed))
 
   let generator_seed = seed.new(sim_seed)
 
-  case test_with_random {
-    0 ->
-      Simulation(
-        sim_seed: sim_seed,
-        generator_seed: generator_seed,
-        test_with: set.new(),
-        list_of_aggregates: [],
-      )
-    n -> {
-      let #(picked_test_withs, updated_seed) =
-        test_with_generator(n) |> random.step(generator_seed)
+  let sim =
+    Simulation(
+      sim_seed: sim_seed,
+      generator_seed: generator_seed,
+      list_of_aggregates: [],
+    )
+    |> create_aggregates_with_intensity(intensity, test_what)
 
-      Simulation(
-        sim_seed: sim_seed,
-        generator_seed: generator_seed,
-        test_with: picked_test_withs,
-        list_of_aggregates: [],
-      )
-    }
-  }
+  list.map(sim.list_of_aggregates, fn(agg) {
+    generate_commands_or_events(agg, test_what, generator_seed)
+  })
 }
 
-pub fn build(
-  sim: Simulation(DeliveryCommand, DeliveryEvent),
+fn create_aggregates_with_intensity(
+  sim: Simulation(fixture.DeliveryCommand, fixture.DeliveryEvent),
   intensity: Intensity,
   test_what: TestWhat,
 ) {
@@ -112,8 +92,83 @@ pub fn build(
   }
 }
 
+fn generate_commands_or_events(
+  sim: SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent),
+  test_what: TestWhat,
+  seed: seed.Seed,
+) {
+  case test_what {
+    TestCommands -> {
+      let commands =
+        sim
+        |> generate_commands(seed)
+        |> assign_data_to_commands(seed)
+        |> add_quirks_to_commands(seed)
+      SimAggregate(..sim, commands: commands)
+    }
+    TestEvents -> sim
+  }
+}
+
+fn assign_data_to_commands(
+  sim: SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent),
+  seed: seed.Seed,
+) {
+  sim.commands
+  |> list.map(fn(c) {
+    generate_command_data(c, seed, list.length(sim.commands))
+  })
+}
+
+fn generate_command_data(
+  cmd: #(Option(CommandQuirks), fixture.DeliveryCommand),
+  seed: seed.Seed,
+  commands_amount: Int,
+) {
+  let #(quirk, command) = cmd
+  let updated = case command {
+    fixture.CreateRoute(_) as c -> c
+    fixture.AssignPackages(_) ->
+      fixture.AssignPackages(generate_delivery_package_data(
+        [],
+        seed,
+        commands_amount * 2,
+      ))
+    fixture.RemovePackage(_) -> todo
+    fixture.DeliverPackage(_) -> todo
+    c -> c
+  }
+
+  #(quirk, updated)
+}
+
+fn generate_delivery_package_data(
+  pkgs: List(fixture.DeliveryPackage),
+  seed: seed.Seed,
+  package_quantity: Int,
+) {
+  case package_quantity {
+    0 -> pkgs
+    n -> {
+      let another =
+        fixture.DeliveryPackage(
+          tracking_nr: random.fixed_size_string(20) |> random.sample(seed),
+          volume: #(
+            random.float(20.0, 100.0) |> random.sample(seed),
+            random.float(20.0, 100.0) |> random.sample(seed),
+            random.float(20.0, 100.0) |> random.sample(seed),
+          ),
+          note: random.fixed_size_string(50) |> random.sample(seed),
+          status: fixture.Assigned,
+        )
+
+      generate_delivery_package_data([another, ..pkgs], seed, package_quantity)
+    }
+  }
+}
+
 fn create_aggregates(
-  sim: Simulation(DeliveryCommand, DeliveryEvent),
+  sim: Simulation(fixture.DeliveryCommand, fixture.DeliveryEvent),
   number: Int,
   test_what: TestWhat,
 ) {
@@ -124,101 +179,156 @@ fn create_aggregates(
   let aggregates =
     set.to_list(ids)
     |> list.filter(fn(id) { id == "" })
-    |> list.map(fn(id) {
-      SimState(
-        id: id,
-        commands: case test_what {
-          Commands | EventsAndCommands -> command_generator(sim)
-          _ -> []
-        },
-        events: case test_what {
-          Commands | EventsAndCommands -> event_generator(sim)
-          _ -> []
-        },
-      )
-    })
+    |> list.map(fn(id) { SimAggregate(id: id, commands: [], events: []) })
 
   Simulation(..sim, list_of_aggregates: aggregates)
+}
+
+fn generate_commands(
+  sim: SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent),
+  seed: seed.Seed,
+) {
+  SimAggregate(
+    ..sim,
+    commands: generate_command(
+      [
+        #(
+          option.None,
+          fixture.CreateRoute(random.string() |> random.sample(seed)),
+        ),
+      ],
+      random.int(20, 200) |> random.sample(seed),
+      seed,
+    ),
+  )
+}
+
+fn generate_command(
+  generated_commands: List(#(Option(CommandQuirks), fixture.DeliveryCommand)),
+  num_remaining: Int,
+  seed: seed.Seed,
+) {
+  case num_remaining {
+    0 -> generated_commands
+    n ->
+      case list.last(generated_commands) {
+        Error(_) -> generated_commands
+        Ok(#(_, cmd)) -> {
+          [
+            #(option.None, next_weighted_command(cmd) |> random.sample(seed)),
+            ..generated_commands
+          ]
+          |> list.reverse()
+          |> generate_command(n - 1, seed)
+        }
+      }
+  }
+}
+
+fn add_quirks_to_commands(
+  generated_commands: List(#(Option(CommandQuirks), fixture.DeliveryCommand)),
+  seed: seed.Seed,
+) {
+  generated_commands
+  |> list.map(fn(c) { discover_quirk(c, seed) })
+}
+
+fn discover_quirk(
+  cmd: #(Option(CommandQuirks), fixture.DeliveryCommand),
+  seed: seed.Seed,
+) {
+  let #(_, command) = cmd
+  let quirk = case command {
+    fixture.CreateRoute(_) -> option.None
+    fixture.AssignPackages(_) ->
+      random.weighted(#(0.8, option.None), [
+        #(0.2 /. 3.0, option.Some(CreatesDataHeavyEvent)),
+        #(0.2 /. 3.0, option.Some(CreatesManyEvents)),
+        #(0.2 /. 3.0, option.Some(CreatesNoEvents)),
+      ])
+      |> random.sample(seed)
+    fixture.RemovePackage(_)
+    | fixture.DeliverPackage(_)
+    | fixture.UnableToDeliverPackage(_) ->
+      random.weighted(#(0.8, option.None), [#(0.2, option.Some(Errors))])
+      |> random.sample(seed)
+    fixture.CrazyCommand -> option.Some(Crashes)
+  }
+
+  let updated_command = case quirk, command {
+    option.None, _ -> command
+    option.Some(CreatesDataHeavyEvent), fixture.AssignPackages(pkgs) ->
+      fixture.AssignPackages([
+        fixture.DeliveryPackage(
+          tracking_nr: random.fixed_size_string(2000) |> random.sample(seed),
+          volume: #(
+            random.float(20.0, 100.0) |> random.sample(seed),
+            random.float(20.0, 100.0) |> random.sample(seed),
+            random.float(20.0, 100.0) |> random.sample(seed),
+          ),
+          note: random.fixed_size_string(50) |> random.sample(seed),
+          status: fixture.Assigned,
+        ),
+        ..pkgs
+      ])
+
+    option.Some(CreatesManyEvents), fixture.AssignPackages(pkgs) ->
+      fixture.AssignPackages(list.append(
+        generate_delivery_package_data([], seed, 200),
+        pkgs,
+      ))
+
+    option.Some(CreatesNoEvents), fixture.AssignPackages(_) ->
+      fixture.AssignPackages([])
+
+    option.Some(Errors), fixture.RemovePackage(_) ->
+      fixture.RemovePackage(random.fixed_size_string(20) |> random.sample(seed))
+
+    option.Some(Errors), fixture.DeliverPackage(_) ->
+      fixture.DeliverPackage(
+        random.fixed_size_string(20) |> random.sample(seed),
+      )
+
+    option.Some(Errors), fixture.UnableToDeliverPackage(_) ->
+      fixture.UnableToDeliverPackage(
+        random.fixed_size_string(20) |> random.sample(seed),
+      )
+
+    _, _ -> command
+  }
+
+  #(quirk, updated_command)
 }
 
 // -----------------------------------------------------------------------------
 //                                 Generators                                   
 // -----------------------------------------------------------------------------
 
-fn test_with_generator(size: Int) {
-  random.fixed_size_set(
-    random.uniform(ManyAggregates, [
-      DuplicatedEvent,
-      EventWithDuplicateId,
-      EventVersionsMissing,
-      CommandThatCreatesOneEvent,
-      CommandThatCreatesDataHeavyEvent,
-      CommandThatCreatesManyEvents,
-      CommandThatCreatesNoEvents,
-      CommandThatErrors,
-      CommandThatCrashes,
-      SubscriberConsumers,
-      SubscriberPolicies,
-    ]),
-    size,
-  )
-}
-
-fn command_generator(sim: Simulation(DeliveryCommand, DeliveryEvent)) {
-  todo
-}
-
-fn event_generator(sim: Simulation(DeliveryCommand, DeliveryEvent)) {
-  todo
-}
-
 fn next_weighted_command(previous: fixture.DeliveryCommand) {
   case previous {
     fixture.CreateRoute(_) ->
-      random.weighted(#(0.9, fixture.AssignPackages), [
-        #(0.05, fixture.RemovePackage),
-        #(0.05, fixture.DeliverPackage),
+      random.weighted(#(0.9, fixture.AssignPackages([])), [
+        #(0.05, fixture.RemovePackage("")),
+        #(0.05, fixture.DeliverPackage("")),
       ])
     fixture.AssignPackages(_) ->
       random.weighted(#(0.01, fixture.CrazyCommand), [
-        #(0.79, fixture.RemovePackage),
-        #(0.2, fixture.DeliverPackage),
+        #(0.79, fixture.RemovePackage("")),
+        #(0.2, fixture.DeliverPackage("")),
       ])
     fixture.RemovePackage(_) ->
       random.weighted(#(0.01, fixture.CrazyCommand), [
-        #(0.2, fixture.RemovePackage),
-        #(0.79, fixture.DeliverPackage),
+        #(0.2, fixture.RemovePackage("")),
+        #(0.79, fixture.DeliverPackage("")),
       ])
     fixture.DeliverPackage(_) ->
       random.weighted(#(0.01, fixture.CrazyCommand), [
-        #(0.3, fixture.UnableToDeliverPackage),
-        #(0.79, fixture.DeliverPackage),
+        #(0.3, fixture.UnableToDeliverPackage("")),
+        #(0.79, fixture.DeliverPackage("")),
       ])
-    _ -> random.weighted(#(0.9, CrazyCommand), [#(0.5, UnableToDeliverPackage)])
-  }
-}
-
-// pub type SimEventType {
-//   Duplicate
-//   DuplicateId
-// }
-
-// pub type CommandThat {
-//   CreatesOneEvent
-//   CreatesDataHeavyEvent
-//   CreatesManyEvents
-//   CreatesNoEvents
-//   Errors
-//   Crashes
-// }
-
-pub fn generate_commmand(that: CommandThat) {
-  case that {
-    CreatesOneEvent -> todo
-    CreatesDataHeavyEvent -> todo
-    CreatesManyEvents -> todo
-    CreatesNoEvents -> todo
-    Errors -> todo
-    Crashes -> todo
+    _ ->
+      random.weighted(#(0.9, fixture.CrazyCommand), [
+        #(0.5, fixture.UnableToDeliverPackage("")),
+      ])
   }
 }
