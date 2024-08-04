@@ -9,7 +9,11 @@ import prng/random
 import prng/seed
 import youid/uuid
 
-pub opaque type Simulation(command, event) {
+const max_commands_to_generate = 50
+
+const max_note_size = 50
+
+pub type Simulation(command, event) {
   Simulation(
     sim_seed: Int,
     generator_seed: seed.Seed,
@@ -17,7 +21,7 @@ pub opaque type Simulation(command, event) {
   )
 }
 
-pub opaque type SimAggregate(command, event) {
+pub type SimAggregate(command, event) {
   SimAggregate(
     id: String,
     events: List(#(Option(EventQuirks), emit.Event(event))),
@@ -93,6 +97,7 @@ fn generate_aggregate_commands_or_events(
   aggregates: List(SimAggregate(fixture.DeliveryCommand, fixture.DeliveryEvent)),
 ) {
   let #(_, new_seed) = random.int(1, 2) |> random.step(seed)
+
   case aggregates {
     [] -> processed_aggregates
     [next] -> [
@@ -149,7 +154,7 @@ fn assign_data_to_commands(
   seed: seed.Seed,
 ) {
   let package_data =
-    generate_delivery_package_data([], seed, list.length(sim.commands) * 4)
+    generate_delivery_package_data([], seed, list.length(sim.commands) * 2)
   sim.commands
   |> list.map(fn(c) { generate_command_data(c, seed, package_data) })
 }
@@ -225,12 +230,7 @@ fn generate_commands(
   SimAggregate(
     ..sim,
     commands: generate_command(
-      [
-        #(
-          option.None,
-          fixture.CreateRoute(random.string() |> random.sample(seed)),
-        ),
-      ],
+      [#(option.None, fixture.CreateRoute(sim.id))],
       random.int(20, 200) |> random.sample(seed),
       seed,
     ),
@@ -245,14 +245,15 @@ fn generate_command(
   case num_remaining {
     0 -> generated_commands
     n ->
-      case list.last(generated_commands) {
+      case list.first(generated_commands) {
         Error(_) -> generated_commands
         Ok(#(_, cmd)) -> {
           let #(new_command, new_seed) =
             next_weighted_command(cmd) |> random.step(seed)
 
+          io.debug(new_command)
+
           [#(option.None, new_command), ..generated_commands]
-          |> list.reverse()
           |> generate_command(n - 1, new_seed)
         }
       }
@@ -310,7 +311,7 @@ fn discover_quirk(
             random.float(20.0, 100.0) |> random.sample(seed),
             random.float(20.0, 100.0) |> random.sample(seed),
           ),
-          note: random.fixed_size_string(50) |> random.sample(seed),
+          note: random.fixed_size_string(max_note_size) |> random.sample(seed),
           status: fixture.Assigned,
         ),
         ..pkgs
@@ -318,7 +319,7 @@ fn discover_quirk(
 
     option.Some(CreatesManyEvents), fixture.AssignPackages(pkgs) ->
       fixture.AssignPackages(list.append(
-        generate_delivery_package_data([], seed, 200),
+        generate_delivery_package_data([], seed, max_commands_to_generate),
         pkgs,
       ))
 
@@ -366,6 +367,11 @@ fn next_weighted_command(previous: fixture.DeliveryCommand) {
         #(0.79, fixture.DeliverPackage("")),
       ])
     fixture.DeliverPackage(_) ->
+      random.weighted(#(0.01, fixture.CrazyCommand), [
+        #(0.3, fixture.UnableToDeliverPackage("")),
+        #(0.79, fixture.DeliverPackage("")),
+      ])
+    fixture.UnableToDeliverPackage(_) ->
       random.weighted(#(0.01, fixture.CrazyCommand), [
         #(0.3, fixture.UnableToDeliverPackage("")),
         #(0.79, fixture.DeliverPackage("")),
