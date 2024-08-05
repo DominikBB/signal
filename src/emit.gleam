@@ -54,7 +54,7 @@ pub type CommandHandler(state, command, event) =
 pub type EventHandler(state, event) =
   fn(state, Event(event)) -> state
 
-pub type PersistanceLayerMessages(event) {
+pub type PersistanceInterface(event) {
   GetStoredEvents(process.Subject(Result(List(Event(event)), String)), String)
   IsIdentityAvailable(process.Subject(Result(Bool, String)), String)
   StoreEvents(List(Event(event)))
@@ -73,9 +73,7 @@ pub type Subscriber(event) {
 pub opaque type EmitConfig(aggregate, command, event) {
   EmitConfig(
     aggregate: AggregateConfig(aggregate, command, event),
-    persistance_handler: Option(
-      process.Subject(PersistanceLayerMessages(event)),
-    ),
+    persistance_handler: Option(process.Subject(PersistanceInterface(event))),
     subscribers: List(Subscriber(event)),
     pool_size: Int,
   )
@@ -172,7 +170,7 @@ pub fn with_subscriber(
 /// 
 pub fn with_persistance_layer(
   config: EmitConfig(aggregate, command, event),
-  persist: process.Subject(PersistanceLayerMessages(event)),
+  persist: process.Subject(PersistanceInterface(event)),
 ) -> EmitConfig(aggregate, command, event) {
   EmitConfig(..config, persistance_handler: Some(persist))
 }
@@ -198,7 +196,7 @@ pub fn start(config: EmitConfig(aggregate, command, event)) {
 /// let post = emit.get_aggregate(em, "how-to-gleam")
 /// |> emit.get_state()
 /// ```
-pub fn get_aggregate(
+pub fn aggregate(
   emit: Emit(aggregate, command, event),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
@@ -291,7 +289,7 @@ fn emit_handler(cfg: EmitService(aggregate, command, event)) {
 //                                  Aggregate                                   
 // -----------------------------------------------------------------------------
 
-pub type AggregateState(aggregate, command, event) {
+type AggregateState(aggregate, command, event) {
   AggregateState(version: Int, state: aggregate)
 }
 
@@ -302,7 +300,7 @@ pub type AggregateMessage(aggregate, command, event) {
   ShutdownAggregate
 }
 
-pub fn aggregate_init(
+fn aggregate_init(
   events: List(Event(event)),
   cfg: AggregateConfig(aggregate, command, event),
 ) {
@@ -318,7 +316,7 @@ pub fn aggregate_init(
   }
 }
 
-pub fn aggregate_handler(
+fn aggregate_handler(
   id: String,
   command_handler: CommandHandler(aggregate, command, event),
   event_handler: EventHandler(aggregate, event),
@@ -412,10 +410,10 @@ fn send_event_to_bus(
 //                               Aggregate Pool                                 
 // -----------------------------------------------------------------------------
 
-pub type Pool(aggregate, command, event) =
+type Pool(aggregate, command, event) =
   process.Subject(PoolMessage(aggregate, command, event))
 
-pub type PoolMessage(aggregate, command, event) {
+type PoolMessage(aggregate, command, event) {
   CreateAggregate(
     reply_with: process.Subject(
       Result(Aggregate(aggregate, command, event), String),
@@ -431,7 +429,7 @@ pub type PoolMessage(aggregate, command, event) {
   ShutdownPool
 }
 
-pub fn pool_handler(
+fn pool_handler(
   config: AggregateConfig(aggregate, command, event),
   bus: Bus(event),
   store: Store(event),
@@ -543,15 +541,15 @@ fn start_aggregate(
 //                                  Event Bus                                   
 // -----------------------------------------------------------------------------
 
-pub type Bus(event) =
+type Bus(event) =
   process.Subject(BusMessage(event))
 
-pub type BusMessage(event) {
+type BusMessage(event) {
   PushEvent(Event(event))
   ShutdownBus
 }
 
-pub fn bus_handler(subscribers: List(Subscriber(event)), store: Store(event)) {
+fn bus_handler(subscribers: List(Subscriber(event)), store: Store(event)) {
   fn(message: BusMessage(event), _state: Nil) {
     case message {
       PushEvent(event) -> {
@@ -594,7 +592,7 @@ fn notify_store(event: Event(event), store: Store(event)) {
 type Store(event) =
   process.Subject(StoreMessages(event))
 
-pub opaque type StoreMessages(event) {
+type StoreMessages(event) {
   StoreEvent(event: Event(event))
   GetEvents(
     reply_with: process.Subject(Result(List(Event(event)), String)),
@@ -610,7 +608,7 @@ pub opaque type StoreMessages(event) {
 }
 
 fn set_up_store_handler(
-  persistor: Option(process.Subject(PersistanceLayerMessages(event))),
+  persistor: Option(process.Subject(PersistanceInterface(event))),
 ) {
   case persistor {
     Some(p) -> Ok(store_handler(p))
@@ -623,7 +621,7 @@ fn set_up_store_handler(
   }
 }
 
-fn store_handler(persistor: process.Subject(PersistanceLayerMessages(event))) {
+fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
   fn(
     message: StoreMessages(event),
     state: #(Bool, List(Event(event)), List(Event(event))),
@@ -664,7 +662,7 @@ fn store_handler(persistor: process.Subject(PersistanceLayerMessages(event))) {
 }
 
 fn in_memory_persistance_handler(
-  message: PersistanceLayerMessages(event),
+  message: PersistanceInterface(event),
   state: List(Event(event)),
 ) {
   case message {
