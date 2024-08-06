@@ -54,6 +54,7 @@ pub type TestWith {
 
 pub type Intensity {
   OneAggregate
+  ThreeAggregates
   TenAggregates
   HoundredAggregates
   ThousandAggregates
@@ -67,11 +68,10 @@ pub type TestWhat {
 
 pub fn new(intensity: Intensity, test_what: TestWhat) {
   let sim_seed = uuid.v7() |> uuid.time_posix_microsec()
-  io.print("Simulating with seed: " <> int.to_string(sim_seed))
 
   let generator_seed = seed.new(sim_seed)
 
-  let sim =
+  let with_aggregates =
     Simulation(
       sim_seed: sim_seed,
       generator_seed: generator_seed,
@@ -79,14 +79,33 @@ pub fn new(intensity: Intensity, test_what: TestWhat) {
     )
     |> create_aggregates_with_intensity(intensity, test_what)
 
-  Simulation(
-    ..sim,
-    list_of_aggregates: generate_aggregate_commands_or_events(
-      [],
-      generator_seed,
-      sim.list_of_aggregates,
-    ),
+  let sim =
+    Simulation(
+      ..with_aggregates,
+      list_of_aggregates: generate_aggregate_commands_or_events(
+        [],
+        generator_seed,
+        with_aggregates.list_of_aggregates,
+      ),
+    )
+
+  io.println("Simulation with seed: " <> int.to_string(sim.sim_seed))
+  io.println(
+    "With "
+    <> int.to_string(list.length(sim.list_of_aggregates))
+    <> " aggregates.",
   )
+  io.println(
+    "With "
+    <> int.to_string(
+      list.fold(sim.list_of_aggregates, 0, fn(acc, agg) {
+        acc + list.length(agg.commands)
+      }),
+    )
+    <> " commands.",
+  )
+
+  sim
 }
 
 fn generate_aggregate_commands_or_events(
@@ -123,6 +142,7 @@ fn create_aggregates_with_intensity(
 ) {
   case intensity {
     OneAggregate -> create_aggregates(sim, 1, test_what)
+    ThreeAggregates -> create_aggregates(sim, 3, test_what)
     TenAggregates -> create_aggregates(sim, 10, test_what)
     HoundredAggregates -> create_aggregates(sim, 100, test_what)
     ThousandAggregates -> create_aggregates(sim, 1000, test_what)
@@ -231,7 +251,7 @@ fn generate_commands(
     ..sim,
     commands: generate_command(
       [#(option.None, fixture.CreateRoute(sim.id))],
-      random.int(20, 200) |> random.sample(seed),
+      random.int(20, max_commands_to_generate) |> random.sample(seed),
       seed,
     ),
   )
@@ -250,8 +270,6 @@ fn generate_command(
         Ok(#(_, cmd)) -> {
           let #(new_command, new_seed) =
             next_weighted_command(cmd) |> random.step(seed)
-
-          io.debug(new_command)
 
           [#(option.None, new_command), ..generated_commands]
           |> generate_command(n - 1, new_seed)

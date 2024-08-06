@@ -63,18 +63,26 @@ pub type PersistanceInterface(event) {
 
 /// Consumers are called when an event is produced
 /// 
-pub type Subscriber(event) {
-  Consumer(process.Subject(Event(event)))
+pub type Subscriber(state, event) {
+  Consumer(process.Subject(ConsumerMessage(state, event)))
   Policy(task.Task(Event(event)))
+}
+
+/// Consumers should receive and handle these messages
+/// 
+pub type ConsumerMessage(state, event) {
+  Consume(Event(event))
+  GetConsumerState(reply: process.Subject(state))
+  ShutdownConsumer
 }
 
 /// Configures the internals of an emit service
 ///
-pub opaque type EmitConfig(aggregate, command, event) {
+pub opaque type EmitConfig(aggregate, state, command, event) {
   EmitConfig(
     aggregate: AggregateConfig(aggregate, command, event),
     persistance_handler: Option(process.Subject(PersistanceInterface(event))),
-    subscribers: List(Subscriber(event)),
+    subscribers: List(Subscriber(state, event)),
     pool_size: Int,
   )
 }
@@ -110,7 +118,7 @@ pub type AggregateConfig(aggregate, command, event) {
 /// ```
 pub fn configure(
   agg: AggregateConfig(aggregate, command, event),
-) -> EmitConfig(aggregate, command, event) {
+) -> EmitConfig(aggregate, state, command, event) {
   EmitConfig(
     aggregate: agg,
     persistance_handler: None,
@@ -157,9 +165,9 @@ pub fn configure(
 /// - Your actor should accept the messages which are actually the Events you defined at configuration time
 /// 
 pub fn with_subscriber(
-  config: EmitConfig(aggregate, command, event),
-  sub: Subscriber(event),
-) -> EmitConfig(aggregate, command, event) {
+  config: EmitConfig(aggregate, state, command, event),
+  sub: Subscriber(state, event),
+) -> EmitConfig(aggregate, state, command, event) {
   EmitConfig(..config, subscribers: [sub, ..config.subscribers])
 }
 
@@ -169,15 +177,15 @@ pub fn with_subscriber(
 /// WIP - I am working on some persistance layers, but for now, you can bring your own, or play around with in-memory persistance.
 /// 
 pub fn with_persistance_layer(
-  config: EmitConfig(aggregate, command, event),
+  config: EmitConfig(aggregate, state, command, event),
   persist: process.Subject(PersistanceInterface(event)),
-) -> EmitConfig(aggregate, command, event) {
+) -> EmitConfig(aggregate, state, command, event) {
   EmitConfig(..config, persistance_handler: Some(persist))
 }
 
 /// Starts the emit services and returns a subject used to interact with the event store.
 /// 
-pub fn start(config: EmitConfig(aggregate, command, event)) {
+pub fn start(config: EmitConfig(aggregate, state, command, event)) {
   use service <- result.try(emit_init(config))
 
   actor.start(Nil, emit_handler(service))
@@ -258,7 +266,7 @@ type EmitService(aggregate, command, event) {
   )
 }
 
-fn emit_init(config: EmitConfig(aggregate, command, event)) {
+fn emit_init(config: EmitConfig(aggregate, state, command, event)) {
   use store_handler <- result.try(result.replace_error(
     set_up_store_handler(config.persistance_handler),
     actor.InitTimeout,
@@ -549,7 +557,7 @@ type BusMessage(event) {
   ShutdownBus
 }
 
-fn bus_handler(subscribers: List(Subscriber(event)), store: Store(event)) {
+fn bus_handler(subscribers: List(Subscriber(state, event)), store: Store(event)) {
   fn(message: BusMessage(event), _state: Nil) {
     case message {
       PushEvent(event) -> {
@@ -562,16 +570,19 @@ fn bus_handler(subscribers: List(Subscriber(event)), store: Store(event)) {
   }
 }
 
-fn notify_subscribers(event: Event(event), consumers: List(Subscriber(event))) {
+fn notify_subscribers(
+  event: Event(event),
+  consumers: List(Subscriber(state, event)),
+) {
   case consumers {
     [] -> Nil
-    [Consumer(s)] -> process.send(s, event)
+    [Consumer(s)] -> process.send(s, Consume(event))
     [Policy(t)] -> {
       let _ = task.try_await(t, 5)
       Nil
     }
     [Consumer(s), ..rest] -> {
-      process.send(s, event)
+      process.send(s, Consume(event))
       notify_subscribers(event, rest)
     }
     [Policy(t), ..rest] -> {
@@ -674,7 +685,7 @@ fn in_memory_persistance_handler(
       actor.continue(state)
     }
     IsIdentityAvailable(s, aggregate_id) -> {
-      case list.all(state, fn(e) { e.aggregate_id != aggregate_id }) {
+      case list.any(state, fn(e) { e.aggregate_id == aggregate_id }) {
         True -> process.send(s, Ok(True))
         False -> process.send(s, Ok(False))
       }
