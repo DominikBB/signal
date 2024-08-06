@@ -1,26 +1,30 @@
-# gleames
-
-## An event sourcing library for Gleam
-
 [![Package Version](https://img.shields.io/hexpm/v/gleames)](https://hex.pm/packages/gleames)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gleames/)
 
+<h1 align="center">Emit</h1>
+
+<div align="center">
+  <strong>Make your frontend shine</strong>
+</div>
+
+<div align="center">
+    Makes event sourcing a piece of cake! 🍰
+</div>
+
+---
+
 > ⚠️ There is no running build of this yet, very early dev!
 
-### Goals
+## Features
 
-Create an event sourcing library which should have the simplest interface possible, be easy to set up, require minimal boilerplate, and utilize the OTP abilities for performance, consistency and parallelism.
+-   A **declarative API** that does not intrude into your domain model
+-   **Effortless extensibility** allowing for custom projections, metrics and any other kind of compute to be triggered on event generation
+-   High degree of **scalability** harnessing the power of OTP
 
-I plan to implement the following features:
+## Example
 
--   [ ] An aggregate actor
--   [ ] Support for defining commands and events
--   [ ] Support for defining projections
+```gleam
 
-## Development
 
-```sh
-gleam run   # Run the project
-gleam test  # Run the tests
-gleam shell # Run an Erlang shell
+
 ```
