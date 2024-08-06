@@ -25,6 +25,41 @@
 
 ```gleam
 
+import emit
 
+pub type BlogPost = {
+  BlogPost(title: String, body: String)
+}
 
+pub type PostCommand {
+  SetPostTitle(String)
+  SetPostBody(String)
+}
+
+pub type PostEvent {
+  PostTitleChanged(String)
+  PostBodyChanged(String)
+}
+
+pub fn main() {
+
+  // Configure an aggregate
+  let aggregate_config = AggregateConfig(
+    initial_state: my_default_aggregate,
+    command_handler: my_command_handler,
+    event_handler: my_event_handler
+  )
+
+  // Configure emit
+  let store = emit.configure(aggregate_config)
+  |> with_persistance_layer(my_storage)
+  |> with_subscriber(my_notification_client)
+  |> with_subscriber(my_metrics_counter)
+  |> start()
+
+  // Process a command
+  let result = emit.get_aggregate(em, "how-to-gleam")
+  |> emit.handle_command(SetPostTitle("how to gleam"))
+  // BlogPost("how to gleam", "")
+}
 ```

@@ -5,6 +5,7 @@ import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/result
+import gleam/set
 import gleeunit
 import gleeunit/should
 import simulation
@@ -23,7 +24,7 @@ pub fn new_simulation_creates_test_data_test() {
 
 pub fn emit_creates_aggregates_test() {
   let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
-  let #(sut, _, _) = set_up_emit()
+  let #(sut, _, _, _) = set_up_emit()
 
   let assert Ok(aggregates) = create_aggregates(sut, sim)
 
@@ -33,7 +34,7 @@ pub fn emit_creates_aggregates_test() {
 
 pub fn emit_retrieves_aggregates_test() {
   let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
-  let #(sut, _, _) = set_up_emit()
+  let #(sut, _, _, _) = set_up_emit()
   let assert Ok(_) = create_aggregates(sut, sim)
 
   list.map(sim.list_of_aggregates, fn(agg) {
@@ -45,7 +46,7 @@ pub fn emit_retrieves_aggregates_test() {
 
 pub fn aggregate_processes_commands_and_mutates_state_test() {
   let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
-  let #(sut, _, _) = set_up_emit()
+  let #(sut, _, _, _) = set_up_emit()
   let assert Ok(_) = create_aggregates(sut, sim)
   let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(2))
 
@@ -63,13 +64,54 @@ pub fn aggregate_processes_commands_and_mutates_state_test() {
   })
 }
 
+pub fn aggregate_processes_commands_and_emits_events_test() {
+  let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
+  let #(sut, _, _, store) = set_up_emit()
+  let assert Ok(_) = create_aggregates(sut, sim)
+  let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
+
+  list.map(sim.list_of_aggregates, fn(agg) {
+    let assert Ok(events) =
+      process.call(store, emit.GetStoredEvents(_, agg.id), 5)
+
+    list.length(events)
+    |> should.equal(1)
+  })
+}
+
+pub fn event_bus_borodcasts_events_to_subscribers_test() {
+  let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
+  let #(sut, event_counter, aggregate_counter, _) = set_up_emit()
+  let assert Ok(_) = create_aggregates(sut, sim)
+  let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
+
+  process.call(event_counter, emit.GetConsumerState(_), 5)
+  |> should.equal(3)
+
+  process.call(aggregate_counter, emit.GetConsumerState(_), 5)
+  |> should.equal(3)
+}
+
+pub fn aggregate_pool_evicts_aggregates_from_memory_test() {
+  let sim = simulation.new(simulation.TenAggregates, simulation.TestCommands)
+  let #(sut, _, _, _) = set_up_emit()
+  let assert Ok(_) = create_aggregates(sut, sim)
+
+  list.length(sim.list_of_aggregates) |> should.equal(10)
+
+  emit.get_current_pool_size(sut)
+  |> should.equal(5)
+}
+
 // -----------------------------------------------------------------------------
 //                                 Test setup                                   
 // -----------------------------------------------------------------------------
 
 fn set_up_emit() {
   let assert Ok(persistance) = actor.start([], test_persistance_handler)
-  let assert Ok(subscriber) = actor.start(0, test_subscriber)
+  let assert Ok(event_counter) = actor.start(0, event_count_subscriber)
+  let assert Ok(aggregate_counter) =
+    actor.start(set.new(), unique_aggregate_counter_subscriber)
 
   let assert Ok(emit) =
     emit.configure(emit.AggregateConfig(
@@ -82,11 +124,13 @@ fn set_up_emit() {
       command_handler: fixture.command_handler(),
       event_handler: fixture.event_handler(),
     ))
+    |> emit.with_pool_size_limit(5)
     |> emit.with_persistance_layer(persistance)
-    |> emit.with_subscriber(emit.Consumer(subscriber))
+    |> emit.with_subscriber(emit.Consumer(event_counter))
+    |> emit.with_subscriber(emit.Consumer(aggregate_counter))
     |> emit.start()
 
-  #(emit, subscriber, persistance)
+  #(emit, event_counter, aggregate_counter, persistance)
 }
 
 fn create_aggregates(
@@ -176,12 +220,29 @@ fn test_persistance_handler(
   }
 }
 
-fn test_subscriber(message: emit.ConsumerMessage(Int, event), event_count: Int) {
+fn event_count_subscriber(
+  message: emit.ConsumerMessage(Int, event),
+  event_count: Int,
+) {
   case message {
     emit.Consume(_) -> actor.continue(event_count + 1)
     emit.GetConsumerState(s) -> {
       process.send(s, event_count)
       actor.continue(event_count)
+    }
+    emit.ShutdownConsumer -> actor.Stop(process.Normal)
+  }
+}
+
+fn unique_aggregate_counter_subscriber(
+  message: emit.ConsumerMessage(Int, event),
+  aggregate_ids: set.Set(String),
+) {
+  case message {
+    emit.Consume(e) -> actor.continue(set.insert(aggregate_ids, e.aggregate_id))
+    emit.GetConsumerState(s) -> {
+      process.send(s, set.size(aggregate_ids))
+      actor.continue(aggregate_ids)
     }
     emit.ShutdownConsumer -> actor.Stop(process.Normal)
   }

@@ -184,6 +184,21 @@ pub fn with_persistance_layer(
   EmitConfig(..config, persistance_handler: Some(persist))
 }
 
+/// Defines the maximum number of aggregates kept in memory. **Defaults to 100**,
+/// lower it if you desire lower memory consumption, increase it if you desire higher performance.
+/// 
+/// When an aggregate which is not in the pool is requested, emit has to rebuild it from events in the database.
+/// 
+/// > ⚠️ **Large aggregates** that contain a lot of data are an **anti-pattern** in event sourcing, instead of lowering the pool size,
+/// > you might want to consider breaking up your aggregate and redesigning it, or storing some data using a different persistance method.
+/// 
+pub fn with_pool_size_limit(
+  config: EmitConfig(aggregate, state, command, event),
+  aggregates_in_memory: Int,
+) {
+  EmitConfig(..config, pool_size: aggregates_in_memory)
+}
+
 /// Starts the emit services and returns a subject used to interact with the event store.
 /// 
 pub fn start(config: EmitConfig(aggregate, state, command, event)) {
@@ -255,6 +270,14 @@ pub fn get_id(agg: Aggregate(aggregate, command, event)) -> String {
   process.call(agg, Identity(_), 5)
 }
 
+/// Gets the current size of the aggregate pool in memory, mainly for testing
+/// 
+pub fn get_current_pool_size(emit: Emit(aggregate, command, event)) -> Int {
+  let pool = process.call(emit, GetPool(_), 5)
+
+  process.call(pool, PoolSize(_), 5)
+}
+
 // -----------------------------------------------------------------------------
 //                                    Emit                                      
 // -----------------------------------------------------------------------------
@@ -276,7 +299,7 @@ fn emit_init(config: EmitConfig(aggregate, state, command, event)) {
   use bus <- result.try(actor.start(Nil, bus_handler(config.subscribers, store)))
   use pool <- result.try(actor.start(
     dict.new(),
-    pool_handler(config.aggregate, bus, store),
+    pool_handler(config.aggregate, bus, store, config.pool_size),
   ))
 
   Ok(EmitService(pool: pool, bus: bus, store: store))
@@ -435,6 +458,7 @@ type PoolMessage(aggregate, command, event) {
     ),
     id: String,
   )
+  PoolSize(reply_with: process.Subject(Int))
   ShutdownPool
 }
 
@@ -442,10 +466,11 @@ fn pool_handler(
   config: AggregateConfig(aggregate, command, event),
   bus: Bus(event),
   store: Store(event),
+  max_size: Int,
 ) {
   fn(
     operation: PoolMessage(aggregate, command, event),
-    state: Dict(String, Aggregate(aggregate, command, event)),
+    state: Dict(String, #(Aggregate(aggregate, command, event), Int)),
   ) {
     case operation {
       CreateAggregate(client, with_id) -> {
@@ -456,10 +481,19 @@ fn pool_handler(
           False, False -> {
             case start_aggregate(config, bus, with_id, []) {
               Ok(agg) -> {
-                dict.insert(state, with_id, agg)
                 process.send(client, Ok(agg))
+                actor.continue(
+                  dict.insert(
+                    evict_aggregates_workflow(max_size, state),
+                    with_id,
+                    #(agg, dict.size(state) + 1),
+                  ),
+                )
               }
-              error -> process.send(client, error)
+              error -> {
+                process.send(client, error)
+                actor.continue(state)
+              }
             }
           }
           _, _ -> {
@@ -467,9 +501,9 @@ fn pool_handler(
               client,
               Error("Aggregate ID must be unique, " <> with_id <> " is not!"),
             )
+            actor.continue(state)
           }
         }
-        actor.continue(state)
       }
       GetAggregate(client, id) -> {
         case
@@ -481,15 +515,42 @@ fn pool_handler(
           )
         {
           Ok(aggregate) -> {
-            dict.insert(state, id, aggregate)
+            dict.insert(state, id, #(aggregate, dict.size(state) + 1))
             process.send(client, Ok(aggregate))
           }
           Error(msg) -> process.send(client, Error(msg))
         }
         actor.continue(state)
       }
+      PoolSize(s) -> {
+        process.send(s, dict.to_list(state) |> list.length())
+        actor.continue(state)
+      }
       ShutdownPool -> actor.Stop(process.Normal)
     }
+  }
+}
+
+fn evict_aggregates_workflow(
+  max_size: Int,
+  state: Dict(String, #(Aggregate(aggregate, command, event), Int)),
+) {
+  // Happens before insertion of aggregate into pool, hence - 1
+  case dict.size(state) >= max_size - 1 {
+    True -> {
+      let eviction_list =
+        dict.to_list(state)
+        |> list.filter(fn(agg) {
+          let #(_, #(_, position)) = agg
+          position >= max_size - 1
+        })
+        |> list.map(fn(agg) {
+          let #(id, #(agg, _)) = agg
+          process.send(agg, ShutdownAggregate)
+          id
+        })
+    }
+    False -> state
   }
 }
 
@@ -507,11 +568,11 @@ fn gather_aggregate(
   aggregate_initializer: fn(List(Event(event))) ->
     Result(Aggregate(aggregate, command, event), String),
   store: Store(event),
-  dict: Dict(String, Aggregate(aggregate, command, event)),
+  dict: Dict(String, #(Aggregate(aggregate, command, event), Int)),
   id: String,
 ) {
   case dict.get(dict, id) {
-    Ok(value) -> Ok(value)
+    Ok(#(value, _)) -> Ok(value)
     Error(_) -> gather_aggregate_from_store(aggregate_initializer, store, id)
   }
 }
