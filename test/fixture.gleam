@@ -1,5 +1,6 @@
 import emit
 import gleam/dict
+import gleam/io
 import gleam/list
 
 // I want data that can:
@@ -66,7 +67,12 @@ pub fn command_handler() -> emit.CommandHandler(
 ) {
   fn(command: DeliveryCommand, state: DeliveryRoute) {
     case command {
-      CreateRoute(id) -> Ok([RouteCreated(id)])
+      CreateRoute(id) -> {
+        case state.id {
+          "" -> Ok([RouteCreated(id)])
+          _ -> Error("Route already created!")
+        }
+      }
       AssignPackages(pkgs) -> Ok(assign_packages_workflow([], pkgs))
       RemovePackage(tracking_nr) ->
         case take_package(state.payload, tracking_nr) {

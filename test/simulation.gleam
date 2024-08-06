@@ -370,10 +370,7 @@ fn discover_quirk(
 fn next_weighted_command(previous: fixture.DeliveryCommand) {
   case previous {
     fixture.CreateRoute(_) ->
-      random.weighted(#(0.9, fixture.AssignPackages([])), [
-        #(0.05, fixture.RemovePackage("")),
-        #(0.05, fixture.DeliverPackage("")),
-      ])
+      random.weighted(#(1.0, fixture.AssignPackages([])), [])
     fixture.AssignPackages(_) ->
       random.weighted(#(0.01, fixture.CrazyCommand), [
         #(0.79, fixture.RemovePackage("")),

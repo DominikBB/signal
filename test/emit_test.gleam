@@ -81,20 +81,15 @@ pub fn emit_retrieves_aggregates_test() {
 
 pub fn aggregate_processes_commands_and_mutates_state_test() {
   let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
-  let #(sut, _, store) = set_up_emit()
+  let #(sut, _, _) = set_up_emit()
   let assert Ok(_) = create_aggregates(sut, sim)
   let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(2))
 
   list.map(sim.list_of_aggregates, fn(agg) {
-    let stored_events = process.call(store, emit.GetStoredEvents(_, agg.id), 5)
-    io.debug(stored_events)
-
     let assert Ok(retrieved_state) =
       emit.aggregate(sut, agg.id) |> result.map(emit.get_state(_))
 
     let assert [_, #(_, fixture.AssignPackages(assigned)), ..] = agg.commands
-
-    io.debug(retrieved_state)
 
     retrieved_state.id
     |> should.equal(agg.id)
@@ -171,11 +166,9 @@ fn process_commands(
   ),
   limit: option.Option(Int),
 ) {
-  let commands_to_handle = {
-    case limit {
-      option.Some(n) -> list.take(commands, n)
-      option.None -> commands
-    }
+  let commands_to_handle = case limit {
+    option.Some(n) -> list.take(commands, n)
+    option.None -> commands
   }
 
   result.all(

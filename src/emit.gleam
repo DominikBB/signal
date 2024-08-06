@@ -1,5 +1,6 @@
 import gleam/dict.{type Dict}
 import gleam/erlang/process
+import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -639,14 +640,17 @@ fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
   ) {
     case message {
       StoreEvent(e) -> {
-        case state {
-          #(True, wal, processing) ->
-            actor.continue(#(True, [e, ..wal], processing))
-          #(False, wal, processing) -> {
-            process.send(persistor, StoreEvents([e, ..wal]))
-            actor.continue(#(True, [], list.append(wal, processing)))
-          }
-        }
+        // case state {
+        //   #(True, wal, processing) ->
+        //     actor.continue(#(True, [e, ..wal], processing))
+        //   #(False, wal, processing) -> {
+        //     process.send(persistor, StoreEvents([e, ..wal]))
+        //     actor.continue(#(True, [], list.append(wal, processing)))
+        //   }
+        // }
+
+        process.send(persistor, StoreEvents([e]))
+        actor.continue(state)
       }
       GetEvents(s, id) -> {
         let events = process.call(persistor, GetStoredEvents(_, id), 5)
