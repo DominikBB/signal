@@ -1,7 +1,6 @@
 import emit
 import fixture
 import gleam/erlang/process
-import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
@@ -21,41 +20,6 @@ pub fn new_simulation_creates_test_data_test() {
   let assert Ok(agg) = list.first(sim.list_of_aggregates)
   should.be_true(list.length(agg.commands) >= 1)
 }
-
-// pub fn processing_a_command_produces_an_event_and_mutates_state_test() {
-//   let sim = simulation.new(simulation.OneAggregate, simulation.TestCommands)
-//   let aggregate_id = "test123"
-//   let command = fixture.CreateRoute(aggregate_id)
-
-//   let #(sut, event_counter, store) = set_up_emit()
-//   let assert Ok(aggregate) = emit.create(sut, aggregate_id)
-//   let assert Ok(new_state) = emit.handle_command(aggregate, command)
-
-//   // Returned state is correct
-//   new_state.id
-//   |> shoud.equal(aggregate_id)
-
-//   // Get state returns correct state
-//   emit.get_state(aggregate).id
-//   |> should.equal(aggregate_id)
-
-//   // Fetching the aggregate returns an aggregate with correct state
-//   let assert Ok(newly_fetched_aggregate) = emit.aggregate(sut, aggregate_id)
-
-//   emit.get_state(newly_fetched_aggregate).id
-//   |> should.equal(aggregate_id)
-
-//   // Events have been registerd by subscriber
-//   process.call(event_counter, emit.GetConsumerState(_), 5)
-//   |> should.equal(5)
-
-//   // Events have beed stored with the persitance layer
-//   let assert Ok(stored_events) =
-//     process.call(store, emit.GetStoredEvents(_, aggregate_id), 5)
-
-//   list.length(stored_events)
-//   |> should.equal(1)
-// }
 
 pub fn emit_creates_aggregates_test() {
   let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
