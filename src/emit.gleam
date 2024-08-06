@@ -536,19 +536,21 @@ fn evict_aggregates_workflow(
   state: Dict(String, #(Aggregate(aggregate, command, event), Int)),
 ) {
   // Happens before insertion of aggregate into pool, hence - 1
-  case dict.size(state) >= max_size - 1 {
+  case dict.size(state) >= max_size {
     True -> {
       let eviction_list =
         dict.to_list(state)
         |> list.filter(fn(agg) {
           let #(_, #(_, position)) = agg
-          position >= max_size - 1
+          position >= max_size
         })
         |> list.map(fn(agg) {
           let #(id, #(agg, _)) = agg
           process.send(agg, ShutdownAggregate)
           id
         })
+
+      dict.drop(state, eviction_list)
     }
     False -> state
   }
