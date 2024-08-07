@@ -19,7 +19,7 @@ import gleam/string
 pub type Emit(aggregate, command, event) =
   process.Subject(EmitMessages(aggregate, command, event))
 
-/// The base emit process can get state of your aggregate based on the id.
+/// The base emit process, it handles the internal operation of emit for a given aggregate type.
 /// 
 ///
 pub opaque type EmitMessages(aggregate, command, event) {
@@ -27,7 +27,8 @@ pub opaque type EmitMessages(aggregate, command, event) {
   Shutdown
 }
 
-/// Represents a base event type that is used throughout emit
+/// Represents a base event type that is used throughout emit, in event handlers you are able to use this information if needs be.
+/// 
 ///
 pub type Event(event) {
   Event(

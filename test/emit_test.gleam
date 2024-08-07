@@ -103,6 +103,18 @@ pub fn aggregate_pool_evicts_aggregates_from_memory_test() {
   |> should.equal(5)
 }
 
+pub fn aggregate_will_not_process_duplicate_events() {
+  todo
+}
+
+pub fn aggregate_will_not_process_events_with_repeating_aggregate_version() {
+  todo
+}
+
+pub fn aggregate_will_process_events_based_on_aggregate_version_sort_order() {
+  todo
+}
+
 // -----------------------------------------------------------------------------
 //                                 Test setup                                   
 // -----------------------------------------------------------------------------

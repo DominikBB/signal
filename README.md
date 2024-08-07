@@ -57,3 +57,18 @@ pub fn main() {
   // BlogPost("how to gleam", "")
 }
 ```
+
+## Roadmap
+
+These are the features I see myself adding in the future:
+
+-   [ ] Gleam PGO persistance layer
+-   [ ] Aggregate replay to specific version
+-   Additional customization with handlers
+    -   [ ] Logging handler for customizing logging
+    -   [ ] Genesis event handler for customizing creation of new aggregates
+    -   [ ] Dead letter event handler for customizing aggregates eviction from memory
+-   Various helper functions
+    -   [ ] Cloud Event generator
+    -   [ ] Projection storage helper
+-   [ ] A separate publishing library using an outbox pattern or similar
