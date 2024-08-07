@@ -117,7 +117,7 @@ fn set_up_emit() {
     emit.configure(emit.AggregateConfig(
       initial_state: fixture.InProgressRoute(
         id: "",
-        payload: [],
+        state: InProgress,
         delivered_volume: 0.0,
         failed_volume: 0.0,
       ),

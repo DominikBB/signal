@@ -4,16 +4,10 @@
 <h1 align="center">Emit</h1>
 
 <div align="center">
-  <strong>Make your frontend shine</strong>
-</div>
-
-<div align="center">
     Makes event sourcing a piece of cake! 🍰
 </div>
 
 ---
-
-> ⚠️ There is no running build of this yet, very early dev!
 
 ## Features
 
