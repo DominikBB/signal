@@ -1,4 +1,3 @@
-import signal
 import fixture
 import gleam/int
 import gleam/io
@@ -7,6 +6,7 @@ import gleam/option.{type Option}
 import gleam/set
 import prng/random
 import prng/seed
+import signal
 import youid/uuid
 
 const max_commands_to_generate = 50

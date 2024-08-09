@@ -1,9 +1,9 @@
-import signal
 import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/otp/actor
 import gleam/set
+import signal
 
 // This is all of the business logic of the cart application
 

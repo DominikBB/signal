@@ -1,7 +1,7 @@
-import signal
 import gleam/dict
 import gleam/io
 import gleam/list
+import signal
 
 // I want data that can:
 // - Be used to run simulation tests with random inputs, easily

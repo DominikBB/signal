@@ -1,10 +1,10 @@
 import app/router
 import domain
-import signal
 import gleam/erlang/process
 import gleam/otp/actor
 import gleam/set
 import mist
+import signal
 import wisp
 
 pub fn main() {
