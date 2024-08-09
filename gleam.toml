@@ -1,5 +1,5 @@
 name = "emit"
-version = "0.1.0"
+version = "0.1.1"
 description = "A simple event sourcing library for gleam!"
 gleam = ">= 1.0.0"
 licences = ["Apache-2.0"]
