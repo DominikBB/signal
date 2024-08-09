@@ -1,5 +1,5 @@
-[![Package Version](https://img.shields.io/hexpm/v/gleames)](https://hex.pm/packages/gleames)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gleames/)
+[![Package Version](https://img.shields.io/hexpm/v/signal)](https://hex.pm/packages/signal)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/signal/)
 
 <h1 align="center">Signal</h1>
 
