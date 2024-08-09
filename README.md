@@ -33,7 +33,7 @@ It can make your applications very easy to reason about and extend.
 Aggregates are identified by a unique string id, and can then be retrieved using that id.
 
 ```gleam
-
+use cart <- result.try(emit.create(emit, "new_unique_cart_id"))
 ```
 
 ### Processing a command
@@ -41,7 +41,10 @@ Aggregates are identified by a unique string id, and can then be retrieved using
 This will run your command on a given aggregate, which may produce an event resulting in a new state.
 
 ```gleam
-
+case emit.handle_command(cart, domain.CompletePurchase) {
+    Ok(new_state) -> todo
+    Error(msg) -> todo
+}
 ```
 
 ### Get aggregate state
@@ -49,12 +52,9 @@ This will run your command on a given aggregate, which may produce an event resu
 This will get the state for a given aggregate. Emit manages a pool of in-memory aggregates to improve performance, if an aggregate is not in the pool, it will get events from the storage layer and derive the state.
 
 ```gleam
-
+use aggregate <- result.try(emit.aggregate(emit, "id_of_aggregate"))
+let state = emit.get_state(aggregate)
 ```
-
-## More about Emit
-
-...
 
 ## Learning Emit
 

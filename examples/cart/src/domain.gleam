@@ -63,12 +63,14 @@ pub fn cart_command_handler() -> emit.CommandHandler(
     case message {
       AddToCart(product) -> {
         case
+          cart.state,
           set.to_list(cart.products)
           |> list.filter(fn(p) { p.sku == product.sku })
         {
-          [p] -> Error("Product already in cart!")
-          [] -> Ok([ProductAdded(product)])
-          _ -> Error("More then one unique product should not exist!")
+          InProgress, [p] -> Error("Product already in cart!")
+          InProgress, [] -> Ok([ProductAdded(product)])
+          Paid, _ -> Error("Cannot add to a paid cart!")
+          _, _ -> Error("More then one unique product should not exist!")
         }
       }
       RemoveFromCart(sku) -> {
@@ -77,11 +79,12 @@ pub fn cart_command_handler() -> emit.CommandHandler(
           |> set.to_list()
           |> list.filter(fn(p) { p.sku == sku })
 
-        case product_from_cart {
-          [p] -> Ok([ProductRemoved(p)])
-          [] ->
+        case cart.state, product_from_cart {
+          InProgress, [p] -> Ok([ProductRemoved(p)])
+          Paid, _ -> Error("Cannot remove from a paid cart!")
+          _, [] ->
             Error("The product you are trying to remove is not in the cart!")
-          _ -> Error("More then one unique product should not exist!")
+          _, _ -> Error("More then one unique product should not exist!")
         }
       }
       CompletePurchase ->

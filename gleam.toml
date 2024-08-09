@@ -16,9 +16,9 @@ gleeunit = "~> 1.0"
 youid = ">= 1.2.0 and < 2.0.0"
 prng = ">= 3.0.3 and < 4.0.0"
 
-[documentation]
-pages = [
-  { title = "Event sourcing 101", path = "event-sourcing-101.html", source = "./pages/event-sourcing-101.md" },
-  { title = "How emit works", path = "how-emit-works.html", source = "./pages/how-emit-works.md" },
-  { title = "Get started with emit", path = "get-started-with-emit.html", source = "./pages/get-started-with-emit.md" },
-]
+#[documentation]
+#pages = [
+  #{ title = "Event sourcing 101", path = "event-sourcing-101.html", source = "./pages/event-sourcing-101.md" },
+  #{ title = "How emit works", path = "how-emit-works.html", source = "./pages/how-emit-works.md" },
+  #{ title = "Get started with emit", path = "get-started-with-emit.html", source = "./pages/get-started-with-emit.md" },
+#]

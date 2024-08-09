@@ -169,7 +169,7 @@ fn cart_overview(id: String) -> Response {
         <script src='https://unpkg.com/htmx.org@2.0.1'></script>
       </head>
       <body class='flex justify-center items-center h-screen'>
-        <div class='grid grid-cols-3 gap-4'>
+        <div id='content' class='grid grid-cols-3 gap-4'>
             <div>
               <form class='mt-4' hx-on--after-request='this.reset()' hx-swap='innerHTML' hx-post='/cart/" <> id <> "'' hx-target='.cart-items'>
                 <div class='mb-4'>
@@ -187,7 +187,7 @@ fn cart_overview(id: String) -> Response {
               <div class='cart-items'>
               </div>
               <form class='mt-4'>
-                <button type='submit' hx-swap='innerHTML' hx-post='/cart/" <> id <> "/pay'' hx-target='.revenue' class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded'>Order</button>
+                <button type='submit' hx-swap='innerHTML' hx-post='/cart/" <> id <> "/pay'' hx-target='#content' class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded'>Order</button>
               </form>
             </div>
             
