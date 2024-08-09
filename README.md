@@ -1,6 +1,5 @@
 [![Package Version](https://img.shields.io/hexpm/v/gleames)](https://hex.pm/packages/gleames)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gleames/)
-![CI](https://github.com/dominikbb/emit/workflows/test/badge.svg?branch=master)
 
 <h1 align="center">Emit</h1>
 
