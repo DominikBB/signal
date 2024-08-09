@@ -1,7 +1,7 @@
 [![Package Version](https://img.shields.io/hexpm/v/gleames)](https://hex.pm/packages/gleames)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gleames/)
 
-<h1 align="center">Emit</h1>
+<h1 align="center">Signal</h1>
 
 <div align="center">
     Makes event sourcing a piece of cake! 🍰
@@ -32,7 +32,7 @@ It can make your applications very easy to reason about and extend.
 Aggregates are identified by a unique string id, and can then be retrieved using that id.
 
 ```gleam
-use cart <- result.try(emit.create(emit, "new_unique_cart_id"))
+use cart <- result.try(signal.create(signal, "new_unique_cart_id"))
 ```
 
 ### Processing a command
@@ -40,7 +40,7 @@ use cart <- result.try(emit.create(emit, "new_unique_cart_id"))
 This will run your command on a given aggregate, which may produce an event resulting in a new state.
 
 ```gleam
-case emit.handle_command(cart, domain.CompletePurchase) {
+case signal.handle_command(cart, domain.CompletePurchase) {
     Ok(new_state) -> todo
     Error(msg) -> todo
 }
@@ -48,16 +48,16 @@ case emit.handle_command(cart, domain.CompletePurchase) {
 
 ### Get aggregate state
 
-This will get the state for a given aggregate. Emit manages a pool of in-memory aggregates to improve performance, if an aggregate is not in the pool, it will get events from the storage layer and derive the state.
+This will get the state for a given aggregate. Signal manages a pool of in-memory aggregates to improve performance, if an aggregate is not in the pool, it will get events from the storage layer and derive the state.
 
 ```gleam
-use aggregate <- result.try(emit.aggregate(emit, "id_of_aggregate"))
-let state = emit.get_state(aggregate)
+use aggregate <- result.try(signal.aggregate(signal, "id_of_aggregate"))
+let state = signal.get_state(aggregate)
 ```
 
-## Learning Emit
+## Learning Signal
 
-[Cart example](https://github.com/dominikbb/emit/tree/master/examples/cart) creates a web app using Emit, Wisp and HTMX.
+[Cart example](https://github.com/dominikbb/signal/tree/master/examples/cart) creates a web app using Signal, Wisp and HTMX.
 
 ## Road to v1
 

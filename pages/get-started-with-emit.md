@@ -1,4 +1,4 @@
-# Get started with emit
+# Get started with signal
 
 ---
 

@@ -1,4 +1,4 @@
-import emit
+import signal
 import gleam/dict
 import gleam/io
 import gleam/list
@@ -60,7 +60,7 @@ pub type DeliveryEvent {
 /// Command handler for the van route system, it defines business rules and behaviour
 /// Creating a higher order function is a nice way to inject any dependencies
 /// 
-pub fn command_handler() -> emit.CommandHandler(
+pub fn command_handler() -> signal.CommandHandler(
   DeliveryRoute,
   DeliveryCommand,
   DeliveryEvent,
@@ -120,8 +120,8 @@ fn assign_packages_workflow(
   }
 }
 
-pub fn event_handler() -> emit.EventHandler(DeliveryRoute, DeliveryEvent) {
-  fn(state: DeliveryRoute, event: emit.Event(DeliveryEvent)) {
+pub fn event_handler() -> signal.EventHandler(DeliveryRoute, DeliveryEvent) {
+  fn(state: DeliveryRoute, event: signal.Event(DeliveryEvent)) {
     case event.data {
       RouteCreated(id) -> InProgressRoute(..state, id: id)
       PackageAssigned(pkg) ->

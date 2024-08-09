@@ -1,6 +1,5 @@
 import app/web
 import domain.{type Cart, type CartCommand, type CartEvent}
-import emit
 import gleam/erlang/process
 import gleam/http
 import gleam/int
@@ -8,15 +7,16 @@ import gleam/list
 import gleam/result
 import gleam/set
 import gleam/string_builder
+import signal
 import wisp.{type Request, type Response}
 
 /// We wrap the request handler with a higher order function to provide a
-/// reference to emit
+/// reference to signal
 /// 
 pub fn handle_request(
-  emit: emit.Emit(Cart, CartCommand, CartEvent),
+  signal: signal.Signal(Cart, CartCommand, CartEvent),
   revenue_projection: process.Subject(
-    emit.ConsumerMessage(domain.Price, domain.CartEvent),
+    signal.ConsumerMessage(domain.Price, domain.CartEvent),
   ),
 ) {
   fn(req: Request) -> Response {
@@ -28,10 +28,10 @@ pub fn handle_request(
 
     case req.method, wisp.path_segments(req) {
       http.Get, ["cart", id] -> cart_overview(id)
-      http.Post, ["cart", id] -> add_to_cart(id, req, emit)
-      http.Delete, ["cart", id, sku] -> remove_from_cart(id, sku, emit)
+      http.Post, ["cart", id] -> add_to_cart(id, req, signal)
+      http.Delete, ["cart", id, sku] -> remove_from_cart(id, sku, signal)
       http.Post, ["cart", id, "pay"] ->
-        pay_for_cart(id, emit, revenue_projection)
+        pay_for_cart(id, signal, revenue_projection)
       _, _ -> wisp.not_found()
     }
   }
@@ -39,19 +39,19 @@ pub fn handle_request(
 
 pub fn pay_for_cart(
   id: String,
-  emit: emit.Emit(Cart, CartCommand, CartEvent),
+  signal: signal.Signal(Cart, CartCommand, CartEvent),
   revenue_projection: process.Subject(
-    emit.ConsumerMessage(domain.Price, domain.CartEvent),
+    signal.ConsumerMessage(domain.Price, domain.CartEvent),
   ),
 ) {
   let result = {
     // Get the cart and handle the command
-    use cart <- result.try(emit.aggregate(emit, id))
-    emit.handle_command(cart, domain.CompletePurchase)
+    use cart <- result.try(signal.aggregate(signal, id))
+    signal.handle_command(cart, domain.CompletePurchase)
     // We also want to get the revenue report
   }
 
-  let rev = process.call(revenue_projection, emit.GetConsumerState(_), 5)
+  let rev = process.call(revenue_projection, signal.GetConsumerState(_), 5)
 
   case result {
     Ok(_) ->
@@ -66,12 +66,12 @@ pub fn pay_for_cart(
 pub fn remove_from_cart(
   id: String,
   sku: String,
-  emit: emit.Emit(Cart, CartCommand, CartEvent),
+  signal: signal.Signal(Cart, CartCommand, CartEvent),
 ) -> Response {
   let result = {
     // Get the cart and handle the command
-    use cart <- result.try(emit.aggregate(emit, id))
-    emit.handle_command(cart, domain.RemoveFromCart(wisp.escape_html(sku)))
+    use cart <- result.try(signal.aggregate(signal, id))
+    signal.handle_command(cart, domain.RemoveFromCart(wisp.escape_html(sku)))
   }
 
   case result {
@@ -83,7 +83,7 @@ pub fn remove_from_cart(
 pub fn add_to_cart(
   id: String,
   req: Request,
-  emit: emit.Emit(Cart, CartCommand, CartEvent),
+  signal: signal.Signal(Cart, CartCommand, CartEvent),
 ) -> Response {
   use formdata <- wisp.require_form(req)
 
@@ -102,13 +102,13 @@ pub fn add_to_cart(
     )
 
     // We will create a cart if it doesn't exist 
-    use cart <- result.try(case emit.aggregate(emit, id) {
+    use cart <- result.try(case signal.aggregate(signal, id) {
       Ok(cart) -> Ok(cart)
-      Error(_) -> emit.create(emit, id)
+      Error(_) -> signal.create(signal, id)
     })
 
     // Then we handle the command and repond with new state
-    emit.handle_command(
+    signal.handle_command(
       cart,
       domain.AddToCart(domain.Product(wisp.escape_html(sku), 1, price)),
     )

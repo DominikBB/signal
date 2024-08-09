@@ -16,13 +16,13 @@ import gleam/string
 
 // ----------------------------- Exported Types --------------------------------
 
-/// A base emit process which supervises the behind the scenes stuff and exposes some functionality.
+/// A base signal process which supervises the behind the scenes stuff and exposes some functionality.
 /// 
 ///
-pub type Emit(aggregate, command, event) =
+pub type Signal(aggregate, command, event) =
   process.Subject(EmitMessages(aggregate, command, event))
 
-/// The base emit process, it handles the internal operation of emit for a given aggregate type.
+/// The base signal process, it handles the internal operation of signal for a given aggregate type.
 /// 
 ///
 pub opaque type EmitMessages(aggregate, command, event) {
@@ -30,7 +30,7 @@ pub opaque type EmitMessages(aggregate, command, event) {
   Shutdown
 }
 
-/// Represents a base event type that is used throughout emit, in event handlers you are able to use this information if needs be.
+/// Represents a base event type that is used throughout signal, in event handlers you are able to use this information if needs be.
 /// 
 ///
 pub type Event(event) {
@@ -42,9 +42,9 @@ pub type Event(event) {
   )
 }
 
-/// An aggregate is an actor managed by emit that holds the state, processes commands and events.
+/// An aggregate is an actor managed by signal that holds the state, processes commands and events.
 /// 
-/// You can send messasges to this aggregate and interact with it, but emit provides a number of pre-built functions to help with that.
+/// You can send messasges to this aggregate and interact with it, but signal provides a number of pre-built functions to help with that.
 /// 
 pub type Aggregate(aggregate, command, event) =
   process.Subject(AggregateMessage(aggregate, command, event))
@@ -74,7 +74,7 @@ pub type Aggregate(aggregate, command, event) =
 /// Best practice:
 /// 
 /// ```gleam
-/// pub fn handle_post_commands(notify: NotificationService) -> emit.CommandHandler(Post, PostCommands, PostEvents) {
+/// pub fn handle_post_commands(notify: NotificationService) -> signal.CommandHandler(Post, PostCommands, PostEvents) {
 ///   fn (command: PostCommands, post: Post) {
 ///     case command {
 ///       UpdatePostContent(title, text) -> Ok([PostUpdated(title, text)])
@@ -111,14 +111,14 @@ pub type CommandHandler(state, command, event) =
 pub type EventHandler(state, event) =
   fn(state, Event(event)) -> state
 
-/// When implementing a custom persistance layer, emit expects an actor that handles these messages
+/// When implementing a custom persistance layer, signal expects an actor that handles these messages
 /// 
 /// - GetStoredEvents: used for hydrating aggregates from storage
 /// - IsIdentityAvailable: used to ensure duplicate ids cannot be created
 /// - StoreEvents: used to persist a list of new events
-/// - ShutdownPersistanceLayer: helper to let you shut down your actor, emit will not trigger this message
+/// - ShutdownPersistanceLayer: helper to let you shut down your actor, signal will not trigger this message
 /// 
-/// > ⚠️ Persistance actor has to report the result of the StoreEvents message in form of a PersistanceState event. This allows emit to handle a write ahead log and batch event storage operations. 
+/// > ⚠️ Persistance actor has to report the result of the StoreEvents message in form of a PersistanceState event. This allows signal to handle a write ahead log and batch event storage operations. 
 /// 
 pub type PersistanceInterface(event) {
   GetStoredEvents(process.Subject(Result(List(Event(event)), String)), String)
@@ -135,7 +135,7 @@ pub type PersistanceInterface(event) {
 /// 
 ///  
 /// - Consumer: is an actor that consumes events, and can do whatever it wants with them, and give the user full control of the state, lifecycle and everything elese.
-/// - Policy: is a one-of task that should run on an event, at the moment there is no retries and emit will ignore the return values of these tasks.
+/// - Policy: is a one-of task that should run on an event, at the moment there is no retries and signal will ignore the return values of these tasks.
 /// 
 /// > 🛑 Policies are early in development, not well tested and might result in performance bottlenecks.
 /// 
@@ -146,7 +146,7 @@ pub type Subscriber(state, event) {
 
 /// Consumers are actors that should receive and handle these messages.
 /// 
-/// - Consume: is the only message triggered by emit, and it is triggered on all events processed by the service
+/// - Consume: is the only message triggered by signal, and it is triggered on all events processed by the service
 /// 
 /// Other messages are there for user convenience.
 /// 
@@ -156,7 +156,7 @@ pub type ConsumerMessage(state, event) {
   ShutdownConsumer
 }
 
-/// Configures the internals of an emit service.
+/// Configures the internals of an signal service.
 ///
 pub opaque type EmitConfig(aggregate, state, command, event) {
   EmitConfig(
@@ -167,7 +167,7 @@ pub opaque type EmitConfig(aggregate, state, command, event) {
   )
 }
 
-/// Configures the aggregate processed by the emit service.
+/// Configures the aggregate processed by the signal service.
 ///
 pub type AggregateConfig(aggregate, command, event) {
   AggregateConfig(
@@ -179,7 +179,7 @@ pub type AggregateConfig(aggregate, command, event) {
 
 // --------------------------- Exported functions ------------------------------
 
-/// This is a configuration object that lets you set up your emit instance.
+/// This is a configuration object that lets you set up your signal instance.
 /// 
 /// You should put the configuration somewhere in your app's startup code.
 /// 
@@ -190,7 +190,7 @@ pub type AggregateConfig(aggregate, command, event) {
 ///   event_handler: my_event_handler
 /// )
 /// 
-/// let store = emit.configure(aggregate_config)
+/// let store = signal.configure(aggregate_config)
 /// |> with_persistance_layer(my_storage)
 /// |> with_subscriber(my_notification_client)
 /// |> with_subscriber(my_metrics_counter)
@@ -227,8 +227,8 @@ pub fn configure(
 /// }
 /// ```
 /// Couple of notes on policies:
-/// - Emit will ignore return values of these functions
-/// - WIP Emit currently does not retry failed policies, it will do in the future
+/// - Signal will ignore return values of these functions
+/// - WIP Signal currently does not retry failed policies, it will do in the future
 ///  
 /// *Example consumer:*
 /// ```gleam
@@ -240,8 +240,8 @@ pub fn configure(
 /// } 
 /// ```
 /// There are a few things to not about Consumers:
-/// - Emit will not start or stop your consumers, their lifetime is in your control.
-/// - Emit will ignore any returned data
+/// - Signal will not start or stop your consumers, their lifetime is in your control.
+/// - Signal will ignore any returned data
 /// - Your actor should accept the messages which are actually the Events you defined at configuration time
 /// 
 pub fn with_subscriber(
@@ -251,9 +251,9 @@ pub fn with_subscriber(
   EmitConfig(..config, subscribers: [sub, ..config.subscribers])
 }
 
-/// Configures emit to store events using a particular persistance layer.
+/// Configures signal to store events using a particular persistance layer.
 /// 
-/// Emit will default to an **in-memory store** which is recommended for development.
+/// Signal will default to an **in-memory store** which is recommended for development.
 /// 
 /// WIP - I am working on some persistance layers, but for now, you can bring your own, or play around with in-memory persistance.
 /// 
@@ -267,7 +267,7 @@ pub fn with_persistance_layer(
 /// Defines the maximum number of aggregates kept in memory. **Defaults to 100**,
 /// lower it if you desire lower memory consumption, increase it if you desire higher performance.
 /// 
-/// When an aggregate which is not in the pool is requested, emit has to rebuild it from events in the database.
+/// When an aggregate which is not in the pool is requested, signal has to rebuild it from events in the database.
 /// 
 /// > ⚠️ **Large aggregates** that contain a lot of data are an **anti-pattern** in event sourcing, instead of lowering the pool size,
 /// > you might want to consider breaking up your aggregate and redesigning it, or storing some data using a different persistance method.
@@ -279,7 +279,7 @@ pub fn with_pool_size_limit(
   EmitConfig(..config, pool_size: aggregates_in_memory)
 }
 
-/// Starts the emit services and returns a subject used to interact with the event store.
+/// Starts the signal services and returns a subject used to interact with the event store.
 /// 
 pub fn start(config: EmitConfig(aggregate, state, command, event)) {
   use service <- result.try(emit_init(config))
@@ -287,24 +287,24 @@ pub fn start(config: EmitConfig(aggregate, state, command, event)) {
   actor.start(Nil, emit_handler(service))
 }
 
-/// Use this function to retrieve a particular aggregate from the emit event store. This will return a subject which can then be used to interact with state of you aggregate, or process further commands.
+/// Use this function to retrieve a particular aggregate from the signal event store. This will return a subject which can then be used to interact with state of you aggregate, or process further commands.
 /// 
 /// *Command handling example:*
 /// ```gleam
-/// let result = emit.get_aggregate(em, "how-to-gleam")
-/// |> emit.handle_command(CommentOnPost("how-to-gleam"))
+/// let result = signal.get_aggregate(em, "how-to-gleam")
+/// |> signal.handle_command(CommentOnPost("how-to-gleam"))
 /// ```
 ///
 /// *Getting state example:*
 /// ```gleam
-/// let post = emit.get_aggregate(em, "how-to-gleam")
-/// |> emit.get_state()
+/// let post = signal.get_aggregate(em, "how-to-gleam")
+/// |> signal.get_state()
 /// ```
 pub fn aggregate(
-  emit: Emit(aggregate, command, event),
+  signal: Signal(aggregate, command, event),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(emit, GetPool, 5)
+  let pool = process.call(signal, GetPool, 5)
   process.call(pool, GetAggregate(_, id), 5)
 }
 
@@ -313,18 +313,18 @@ pub fn aggregate(
 /// The ID needs to be unique, otherwise creation will fail.
 /// 
 pub fn create(
-  emit: Emit(aggregate, command, event),
+  signal: Signal(aggregate, command, event),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(emit, GetPool, 5)
+  let pool = process.call(signal, GetPool, 5)
   process.call(pool, CreateAggregate(_, id), 5)
 }
 
 /// Use this function to have your aggregate process a command.
 /// 
 /// ```gleam
-/// let result = emit.get_aggregate(em, "how-to-gleam")
-/// |> emit.handle_command(CreatePost("how-to-gleam"))
+/// let result = signal.get_aggregate(em, "how-to-gleam")
+/// |> signal.handle_command(CreatePost("how-to-gleam"))
 /// ```
 /// 
 pub fn handle_command(
@@ -337,8 +337,8 @@ pub fn handle_command(
 /// Use this function to get the current state of your aggregate.
 /// 
 /// ```gleam
-/// let post = emit.get_aggregate(em, "how-to-gleam")
-/// |> emit.get_state()
+/// let post = signal.get_aggregate(em, "how-to-gleam")
+/// |> signal.get_state()
 /// ```
 pub fn get_state(agg: Aggregate(aggregate, command, event)) -> aggregate {
   process.call(agg, State(_), 5)
@@ -352,14 +352,14 @@ pub fn get_id(agg: Aggregate(aggregate, command, event)) -> String {
 
 /// Gets the current size of the aggregate pool in memory, mainly for testing.
 /// 
-pub fn get_current_pool_size(emit: Emit(aggregate, command, event)) -> Int {
-  let pool = process.call(emit, GetPool(_), 5)
+pub fn get_current_pool_size(signal: Signal(aggregate, command, event)) -> Int {
+  let pool = process.call(signal, GetPool(_), 5)
 
   process.call(pool, PoolSize(_), 5)
 }
 
 // -----------------------------------------------------------------------------
-//                                    Emit                                      
+//                                    Signal                                      
 // -----------------------------------------------------------------------------
 
 type EmitService(aggregate, command, event) {

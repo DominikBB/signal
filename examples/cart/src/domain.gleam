@@ -1,4 +1,4 @@
-import emit
+import signal
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -54,7 +54,7 @@ pub type CartEvent {
 /// A higher order function allows for injecting dependencies, 
 /// and adds guidance to ensure your function complies with the emits CommandHandler type
 /// 
-pub fn cart_command_handler() -> emit.CommandHandler(
+pub fn cart_command_handler() -> signal.CommandHandler(
   Cart,
   CartCommand,
   CartEvent,
@@ -107,11 +107,11 @@ pub fn cart_command_handler() -> emit.CommandHandler(
 
 // --------------------------- The state mutation ------------------------------
 
-/// Notice that the event handler accepts an emit.Event, which adds some
+/// Notice that the event handler accepts an signal.Event, which adds some
 /// metadata to your events, and lets you use them, such as aggregate version.
 /// 
-pub fn cart_event_handler() -> emit.EventHandler(Cart, CartEvent) {
-  fn(cart: Cart, event: emit.Event(CartEvent)) {
+pub fn cart_event_handler() -> signal.EventHandler(Cart, CartEvent) {
+  fn(cart: Cart, event: signal.Event(CartEvent)) {
     case event.data {
       ProductAdded(product) ->
         Cart(..cart, products: set.insert(cart.products, product))
@@ -131,18 +131,18 @@ pub fn cart_event_handler() -> emit.EventHandler(Cart, CartEvent) {
 
 /// This will be an OTP actor that listens to cart events
 pub fn revenue_report_handler(
-  message: emit.ConsumerMessage(Price, CartEvent),
+  message: signal.ConsumerMessage(Price, CartEvent),
   revenue: Price,
 ) {
   case message {
     // Revenue report only cares about the CartPaid event
-    emit.Consume(emit.Event(_, _, _, data: CartPaid(purchase_price))) ->
+    signal.Consume(signal.Event(_, _, _, data: CartPaid(purchase_price))) ->
       actor.continue(add_prices(revenue, purchase_price))
-    emit.GetConsumerState(s) -> {
+    signal.GetConsumerState(s) -> {
       process.send(s, revenue)
       actor.continue(revenue)
     }
-    emit.ShutdownConsumer -> actor.Stop(process.Normal)
+    signal.ShutdownConsumer -> actor.Stop(process.Normal)
     _ -> actor.continue(revenue)
   }
 }

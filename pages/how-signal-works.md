@@ -1,4 +1,4 @@
-# How emit works
+# How signal works
 
 ---
 

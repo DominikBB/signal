@@ -1,4 +1,4 @@
-import emit
+import signal
 import fixture
 import gleam/int
 import gleam/io
@@ -24,7 +24,7 @@ pub type Simulation(command, event) {
 pub type SimAggregate(command, event) {
   SimAggregate(
     id: String,
-    events: List(#(Option(EventQuirks), emit.Event(event))),
+    events: List(#(Option(EventQuirks), signal.Event(event))),
     commands: List(#(Option(CommandQuirks), command)),
   )
 }
