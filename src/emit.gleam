@@ -1,11 +1,13 @@
 import gleam/dict.{type Dict}
 import gleam/erlang/process
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/task
 import gleam/result
+import gleam/set
 import gleam/string
 
 // -----------------------------------------------------------------------------
@@ -14,7 +16,8 @@ import gleam/string
 
 // ----------------------------- Exported Types --------------------------------
 
-/// A base emit process which supervises the behind the scenes stuff and exposes some functionality 
+/// A base emit process which supervises the behind the scenes stuff and exposes some functionality.
+/// 
 ///
 pub type Emit(aggregate, command, event) =
   process.Subject(EmitMessages(aggregate, command, event))
@@ -39,23 +42,84 @@ pub type Event(event) {
   )
 }
 
-/// An aggregate is an actor managed by emit that holds the state, processes commands and events
+/// An aggregate is an actor managed by emit that holds the state, processes commands and events.
 /// 
 /// You can send messasges to this aggregate and interact with it, but emit provides a number of pre-built functions to help with that.
 /// 
 pub type Aggregate(aggregate, command, event) =
   process.Subject(AggregateMessage(aggregate, command, event))
 
-/// A function that applies an enum of commands and might produce events
+/// This is where you put your domain / business logic, a function that has access to the current state of your aggregate, and can decided what to do with a given command.
+/// 
+/// The command handler may return an Error(String), or a list of events. Most of the time, you will be producing one event but in some cases you will find a need for producing multiple.
+/// 
+/// Commands are only triggered once, so they can contain side-effects.
+/// 
+/// Basic example:
+/// ```gleam
+/// pub fn handle_post_commands(command: PostCommands, post: Post) {
+///   case command {
+///     UpdatePostContent(title, text) -> Ok([PostUpdated(title, text)])
+///     PublishPost -> {
+///       case state {
+///         s if s.title == "" -> Error("Cannot publish a post without a title!")
+///         _ -> Ok([PostPublished()])
+///       }
+///     }
+///   }
+/// } 
+/// ```
+/// 
+/// > ⚠️ It is best practice to wrap the handler in a higher order function, this lets you inject dependencies and improves extensibility.
+/// Best practice:
+/// 
+/// ```gleam
+/// pub fn handle_post_commands(notify: NotificationService) -> emit.CommandHandler(Post, PostCommands, PostEvents) {
+///   fn (command: PostCommands, post: Post) {
+///     case command {
+///       UpdatePostContent(title, text) -> Ok([PostUpdated(title, text)])
+///       PublishPost -> {
+///         case state {
+///           s if s.title == "" -> Error("Cannot publish a post without a title!")
+///           _ -> { 
+///             notification.send(notify, "Just published a new post - " <> post.title)
+///             Ok([PostPublished()]) }
+///         }
+///       }
+///     }
+///   }
+/// } 
+/// ```
 /// 
 pub type CommandHandler(state, command, event) =
   fn(command, state) -> Result(List(event), String)
 
-/// A function that applies an enum of events to an aggregate, producing a representation of current state
+/// A function that describes how events translate into state of your aggregate. Events handlers are used to update the aggregate after processing commands, and to hydrate the aggregate from storage.
+/// 
+/// Most of the time these are simple data mapping functions.
+/// 
+/// Basic example:
+/// ```gleam
+/// pub fn handle_post_events(post: Post, event: PostEvents) {
+///   case command {
+///     PostUpdated(title, text) -> Post(..post, title: title, text: text)
+///     PostPublished -> Post(..post, published: True) 
+///   }
+/// } 
+/// ```
 /// 
 pub type EventHandler(state, event) =
   fn(state, Event(event)) -> state
 
+/// When implementing a custom persistance layer, emit expects an actor that handles these messages
+/// 
+/// - GetStoredEvents: used for hydrating aggregates from storage
+/// - IsIdentityAvailable: used to ensure duplicate ids cannot be created
+/// - StoreEvents: used to persist a list of new events
+/// - ShutdownPersistanceLayer: helper to let you shut down your actor, emit will not trigger this message
+/// 
+/// > ⚠️ Persistance actor has to report the result of the StoreEvents message in form of a PersistanceState event. This allows emit to handle a write ahead log and batch event storage operations. 
+/// 
 pub type PersistanceInterface(event) {
   GetStoredEvents(process.Subject(Result(List(Event(event)), String)), String)
   IsIdentityAvailable(process.Subject(Result(Bool, String)), String)
@@ -63,14 +127,28 @@ pub type PersistanceInterface(event) {
   ShutdownPersistanceLayer
 }
 
-/// Consumers are called when an event is produced
+/// Subscribers are triggered on **all** events produced by all aggregates, and serve as a great way to extend your system.
+/// 
+/// Subscribers cannot modify or produce events.
+/// 
+/// These are generally great for creating different read models of your data, reporting, and reacting to certain events. 
+/// 
+///  
+/// - Consumer: is an actor that consumes events, and can do whatever it wants with them, and give the user full control of the state, lifecycle and everything elese.
+/// - Policy: is a one-of task that should run on an event, at the moment there is no retries and emit will ignore the return values of these tasks.
+/// 
+/// > 🛑 Policies are early in development, not well tested and might result in performance bottlenecks.
 /// 
 pub type Subscriber(state, event) {
   Consumer(process.Subject(ConsumerMessage(state, event)))
   Policy(task.Task(Event(event)))
 }
 
-/// Consumers should receive and handle these messages
+/// Consumers are actors that should receive and handle these messages.
+/// 
+/// - Consume: is the only message triggered by emit, and it is triggered on all events processed by the service
+/// 
+/// Other messages are there for user convenience.
 /// 
 pub type ConsumerMessage(state, event) {
   Consume(Event(event))
@@ -78,7 +156,7 @@ pub type ConsumerMessage(state, event) {
   ShutdownConsumer
 }
 
-/// Configures the internals of an emit service
+/// Configures the internals of an emit service.
 ///
 pub opaque type EmitConfig(aggregate, state, command, event) {
   EmitConfig(
@@ -89,7 +167,7 @@ pub opaque type EmitConfig(aggregate, state, command, event) {
   )
 }
 
-/// Configures the internals of an emit service
+/// Configures the aggregate processed by the emit service.
 ///
 pub type AggregateConfig(aggregate, command, event) {
   AggregateConfig(
@@ -174,7 +252,8 @@ pub fn with_subscriber(
 }
 
 /// Configures emit to store events using a particular persistance layer.
-/// Emit will default to an in-memory store which is great for development.
+/// 
+/// Emit will default to an **in-memory store** which is recommended for development.
 /// 
 /// WIP - I am working on some persistance layers, but for now, you can bring your own, or play around with in-memory persistance.
 /// 
@@ -241,7 +320,7 @@ pub fn create(
   process.call(pool, CreateAggregate(_, id), 5)
 }
 
-/// Use this function to have your aggregate process a command
+/// Use this function to have your aggregate process a command.
 /// 
 /// ```gleam
 /// let result = emit.get_aggregate(em, "how-to-gleam")
@@ -255,7 +334,7 @@ pub fn handle_command(
   process.call(agg, HandleCommand(_, command), 5)
 }
 
-/// Use this function to get the current state of your aggregate
+/// Use this function to get the current state of your aggregate.
 /// 
 /// ```gleam
 /// let post = emit.get_aggregate(em, "how-to-gleam")
@@ -265,13 +344,13 @@ pub fn get_state(agg: Aggregate(aggregate, command, event)) -> aggregate {
   process.call(agg, State(_), 5)
 }
 
-/// Gets the ide of the aggregate
+/// Gets the id of the aggregate actor.
 /// 
 pub fn get_id(agg: Aggregate(aggregate, command, event)) -> String {
   process.call(agg, Identity(_), 5)
 }
 
-/// Gets the current size of the aggregate pool in memory, mainly for testing
+/// Gets the current size of the aggregate pool in memory, mainly for testing.
 /// 
 pub fn get_current_pool_size(emit: Emit(aggregate, command, event)) -> Int {
   let pool = process.call(emit, GetPool(_), 5)
@@ -296,7 +375,7 @@ fn emit_init(config: EmitConfig(aggregate, state, command, event)) {
     set_up_store_handler(config.persistance_handler),
     actor.InitTimeout,
   ))
-  use store <- result.try(actor.start(#(False, [], []), store_handler))
+  use store <- result.try(actor.start(#([], []), store_handler))
   use bus <- result.try(actor.start(Nil, bus_handler(config.subscribers, store)))
   use pool <- result.try(actor.start(
     dict.new(),
@@ -341,9 +420,24 @@ fn aggregate_init(
     let aggregate = AggregateState(version: 0, state: cfg.initial_state)
 
     actor.Ready(
-      state: list.fold(events, aggregate, fn(agg, e) {
-        apply_event(e, cfg.event_handler, agg)
-      }),
+      state: events
+        |> list.unique()
+        |> list.sort(fn(e1, e2) {
+          int.compare(e1.aggregate_version, e2.aggregate_version)
+        })
+        |> list.fold([], fn(dedup, event) {
+          case
+            list.any(dedup, fn(d: Event(event)) {
+              d.aggregate_version == event.aggregate_version
+            })
+          {
+            True -> dedup
+            False -> list.append(dedup, [event])
+          }
+        })
+        |> list.fold(aggregate, fn(agg, e) {
+          apply_event(e, cfg.event_handler, agg)
+        }),
       selector: process.new_selector(),
     )
   }
@@ -665,10 +759,14 @@ fn notify_store(event: Event(event), store: Store(event)) {
 //                                 Event Store                                  
 // -----------------------------------------------------------------------------
 
-type Store(event) =
+/// An internal actor used to manage storage of events.
+/// 
+pub type Store(event) =
   process.Subject(StoreMessages(event))
 
-type StoreMessages(event) {
+/// Messages handled by the Store actor, when creating custom persistance layers, you should report persistance state to PersistanceState.
+/// 
+pub type StoreMessages(event) {
   StoreEvent(event: Event(event))
   GetEvents(
     reply_with: process.Subject(Result(List(Event(event)), String)),
@@ -697,24 +795,23 @@ fn set_up_store_handler(
   }
 }
 
+/// Maintains a write ahead log to keep the system performant regardless of the persitance layer
+/// 
 fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
   fn(
     message: StoreMessages(event),
-    state: #(Bool, List(Event(event)), List(Event(event))),
+    state: #(List(Event(event)), List(Event(event))),
   ) {
     case message {
       StoreEvent(e) -> {
-        // case state {
-        //   #(True, wal, processing) ->
-        //     actor.continue(#(True, [e, ..wal], processing))
-        //   #(False, wal, processing) -> {
-        //     process.send(persistor, StoreEvents([e, ..wal]))
-        //     actor.continue(#(True, [], list.append(wal, processing)))
-        //   }
-        // }
-
-        process.send(persistor, StoreEvents([e]))
-        actor.continue(state)
+        let #(wal, processing) = state
+        case list.is_empty(processing) {
+          False -> actor.continue(#([e, ..wal], processing))
+          True -> {
+            process.send(persistor, StoreEvents([e, ..wal]))
+            actor.continue(#([], list.append(wal, processing)))
+          }
+        }
       }
       GetEvents(s, id) -> {
         let events = process.call(persistor, GetStoredEvents(_, id), 5)
@@ -727,18 +824,22 @@ fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
         actor.continue(state)
       }
       PersistanceState(processed, _) -> {
-        let #(_, wal, events_being_processed) = state
+        let #(wal, events_being_processed) = state
         let #(_, not_yet_processed) =
           list.partition(events_being_processed, fn(e) {
             list.contains(processed, e)
           })
 
-        actor.continue(#(False, wal, not_yet_processed))
+        actor.continue(#(wal, not_yet_processed))
       }
       ShutdownStore -> actor.Stop(process.Normal)
     }
   }
 }
+
+// -----------------------------------------------------------------------------
+//                         In memory persistance layer                          
+// -----------------------------------------------------------------------------
 
 fn in_memory_persistance_handler(
   message: PersistanceInterface(event),

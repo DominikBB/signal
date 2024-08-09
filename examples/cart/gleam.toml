@@ -1,12 +1,17 @@
 name = "cart"
 version = "1.0.0"
+gleam = ">= 1.0.0"
 
 target = "erlang"
 
 [dependencies]
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 wisp = ">= 0.16.0 and < 1.0.0"
-emit = { path = "../.." }
+emit = { path = "../../" }
+gleam_otp = "~> 0.10"
+gleam_erlang = "~> 0.24"
+gleam_http = ">= 3.6.0 and < 4.0.0"
+mist = ">= 1.2.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

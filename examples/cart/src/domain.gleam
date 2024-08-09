@@ -1,9 +1,16 @@
-// This is esentially all of the business logic of the cart application
+import emit
+import gleam/erlang/process
+import gleam/int
+import gleam/list
+import gleam/otp/actor
+import gleam/set
+
+// This is all of the business logic of the cart application
 
 // ---------------------------- The domain model -------------------------------
 
 pub type Cart {
-  Cart(id: String, state: CartState, products: set.Set(Product))
+  Cart(state: CartState, products: set.Set(Product))
 }
 
 pub type CartState {
@@ -12,7 +19,7 @@ pub type CartState {
 }
 
 pub type Product {
-  Product(Sku, Quantity, Price)
+  Product(sku: Sku, qty: Quantity, price: Price)
 }
 
 pub type Sku =
@@ -47,9 +54,6 @@ pub type CartEvent {
 /// A higher order function allows for injecting dependencies, 
 /// and adds guidance to ensure your function complies with the emits CommandHandler type
 /// 
-/// Note - you dont need to create a higher order function, but it makes for better
-/// DevEx and extensibility 
-/// 
 pub fn cart_command_handler() -> emit.CommandHandler(
   Cart,
   CartCommand,
@@ -57,7 +61,16 @@ pub fn cart_command_handler() -> emit.CommandHandler(
 ) {
   fn(message: CartCommand, cart: Cart) {
     case message {
-      AddToCart(product) -> Ok([ProductAdded(product)])
+      AddToCart(product) -> {
+        case
+          set.to_list(cart.products)
+          |> list.filter(fn(p) { p.sku == product.sku })
+        {
+          [p] -> Error("Product already in cart!")
+          [] -> Ok([ProductAdded(product)])
+          _ -> Error("More then one unique product should not exist!")
+        }
+      }
       RemoveFromCart(sku) -> {
         let product_from_cart =
           cart.products
@@ -77,7 +90,7 @@ pub fn cart_command_handler() -> emit.CommandHandler(
             let total_price =
               cart.products
               |> set.to_list()
-              |> list.reduce(fn(total, product) {
+              |> list.fold(zero_price(), fn(total, product) {
                 add_prices(total, product.price)
               })
 
@@ -95,17 +108,17 @@ pub fn cart_command_handler() -> emit.CommandHandler(
 /// metadata to your events, and lets you use them, such as aggregate version.
 /// 
 pub fn cart_event_handler() -> emit.EventHandler(Cart, CartEvent) {
-  fn(event: emit.Event(CartEvent), cart: Cart) {
-    case message {
-      ProductAdded(product) -> Cart(..cart, products: set.insert(cart, product))
-      ProductRemoved(sku) ->
+  fn(cart: Cart, event: emit.Event(CartEvent)) {
+    case event.data {
+      ProductAdded(product) ->
+        Cart(..cart, products: set.insert(cart.products, product))
+      ProductRemoved(product) ->
         Cart(
           ..cart,
           products: cart.products
-            |> set.to_list()
-            |> list.filter(fn(p) { p.sku == sku })
-            |> set.from_list(),
+            |> set.delete(product),
         )
+      CartPaid(_) -> Cart(..cart, state: Paid)
     }
   }
 }
@@ -115,18 +128,23 @@ pub fn cart_event_handler() -> emit.EventHandler(Cart, CartEvent) {
 
 /// This will be an OTP actor that listens to cart events
 pub fn revenue_report_handler(
-  message: emit.ConsumerMessage(CartEvent),
+  message: emit.ConsumerMessage(Price, CartEvent),
   revenue: Price,
 ) {
   case message {
     // Revenue report only cares about the CartPaid event
-    CartPaid(purchase_price) ->
+    emit.Consume(emit.Event(_, _, _, data: CartPaid(purchase_price))) ->
       actor.continue(add_prices(revenue, purchase_price))
+    emit.GetConsumerState(s) -> {
+      process.send(s, revenue)
+      actor.continue(revenue)
+    }
+    emit.ShutdownConsumer -> actor.Stop(process.Normal)
     _ -> actor.continue(revenue)
   }
 }
 
-// -------------------------- Price helper function ----------------------------
+// ---------------------------- Helper functions -------------------------------
 
 pub fn new_price(price: Int) {
   case price {
@@ -139,4 +157,13 @@ pub fn add_prices(p1p: Price, p2p: Price) {
   let Price(p1) = p1p
   let Price(p2) = p2p
   Price(p1 + p2)
+}
+
+pub fn zero_price() {
+  Price(0)
+}
+
+pub fn price_to_string(price: Price) {
+  let Price(int_price) = price
+  int.to_string(int_price)
 }

@@ -1,5 +1,6 @@
 [![Package Version](https://img.shields.io/hexpm/v/gleames)](https://hex.pm/packages/gleames)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gleames/)
+![CI](https://github.com/dominikbb/emit/workflows/test/badge.svg?branch=master)
 
 <h1 align="center">Emit</h1>
 
@@ -9,6 +10,16 @@
 
 ---
 
+Event sourcing is a software design pattern where the state of an application is determined by a sequence of events. It differs from traditional software modeling by storing and replaying events to derive the current state, rather than directly modifying the state through mutable operations.
+
+In event sourcing, we process **commands**, which, informed by a **model**, output **events**. The events are then applied to the model to produce new state. The events are persisted instead of the model itself, allowing for an auditable, append only storage model that supports history, rollbacks, and generally avoids need for db migrations.
+
+> **Command** -> produces -> **Events** -> mutates -> **Model**
+
+The model is often referred to as an Aggregate, inspired by the Domain Driven Design approach.
+
+It can make your applications very easy to reason about and extend.
+
 ## Features
 
 -   A **declarative API** that does not intrude into your domain model
@@ -17,58 +28,47 @@
 
 ## Example
 
+### Creating an aggregate
+
+Aggregates are identified by a unique string id, and can then be retrieved using that id.
+
 ```gleam
 
-import emit
-
-pub type BlogPost = {
-  BlogPost(title: String, body: String)
-}
-
-pub type PostCommand {
-  SetPostTitle(String)
-  SetPostBody(String)
-}
-
-pub type PostEvent {
-  PostTitleChanged(String)
-  PostBodyChanged(String)
-}
-
-pub fn main() {
-
-  // Configure an aggregate
-  let aggregate_config = AggregateConfig(
-    initial_state: my_default_aggregate,
-    command_handler: my_command_handler,
-    event_handler: my_event_handler
-  )
-
-  // Configure emit
-  let store = emit.configure(aggregate_config)
-  |> with_persistance_layer(my_storage)
-  |> with_subscriber(my_notification_client)
-  |> with_subscriber(my_metrics_counter)
-  |> start()
-
-  // Process a command
-  let result = emit.get_aggregate(em, "how-to-gleam")
-  |> emit.handle_command(SetPostTitle("how to gleam"))
-  // BlogPost("how to gleam", "")
-}
 ```
 
-## Roadmap
+### Processing a command
 
-These are the features I see myself adding in the future:
+This will run your command on a given aggregate, which may produce an event resulting in a new state.
+
+```gleam
+
+```
+
+### Get aggregate state
+
+This will get the state for a given aggregate. Emit manages a pool of in-memory aggregates to improve performance, if an aggregate is not in the pool, it will get events from the storage layer and derive the state.
+
+```gleam
+
+```
+
+## More about Emit
+
+...
+
+## Learning Emit
+
+[Cart example](https://github.com/dominikbb/emit/tree/master/examples/cart) creates a web app using Emit, Wisp and HTMX.
+
+## Road to v1
+
+These are the features I see version 1 having:
 
 -   [ ] Gleam PGO persistance layer
--   [ ] Aggregate replay to specific version
+-   [ ] Aggregate replay to a specific version
 -   Additional customization with handlers
     -   [ ] Logging handler for customizing logging
-    -   [ ] Genesis event handler for customizing creation of new aggregates
-    -   [ ] Dead letter event handler for customizing aggregates eviction from memory
--   Various helper functions
-    -   [ ] Cloud Event generator
-    -   [ ] Projection storage helper
--   [ ] A separate publishing library using an outbox pattern or similar
+    -   [ ] Genesis event handler for customizing creation of a new aggregate
+    -   [ ] Dead letter event handler for customizing aggregate eviction from memory
+-   [ ] Retry for Policy subscribers
+-   [ ] Aggregate pool management based on activity instead of a queue

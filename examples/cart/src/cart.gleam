@@ -1,10 +1,11 @@
 import app/router
-import domain.{type Cart, type InProgress}
+import domain
 import emit
 import gleam/erlang/process
+import gleam/otp/actor
+import gleam/set
 import mist
 import wisp
-import wisp/wisp_mist
 
 pub fn main() {
   wisp.configure_logger()
@@ -15,7 +16,7 @@ pub fn main() {
   //
   let aggregate_configuration =
     emit.AggregateConfig(
-      initial_state: Cart(id: "", state: InProgress, products: set.new()),
+      initial_state: domain.Cart(state: domain.InProgress, products: set.new()),
       command_handler: domain.cart_command_handler(),
       event_handler: domain.cart_event_handler(),
     )
@@ -23,14 +24,14 @@ pub fn main() {
   // This gets our revenue report actor going
   //
   let assert Ok(revenue_report) =
-    actor.start(domain.new_price(0), domain.revenue_projection)
+    actor.start(domain.zero_price(), domain.revenue_report_handler)
 
   // This will configure and create our emit instance
   // You can handle errors in a nicer way, just keeping it simple.
   //
   let assert Ok(es_service) =
-    emit.configure()
-    |> emit.with_subscriber(revenue_report)
+    emit.configure(aggregate_configuration)
+    |> emit.with_subscriber(emit.Consumer(revenue_report))
     |> emit.start()
 
   // We create a request router injected with emit
@@ -38,7 +39,8 @@ pub fn main() {
   let cart_handler = router.handle_request(es_service, revenue_report)
 
   let assert Ok(_) =
-    wisp_mist.handler(cart_handler, ".")
+    cart_handler
+    |> wisp.mist_handler("")
     |> mist.new
     |> mist.port(8000)
     |> mist.start_http

@@ -1,24 +1,9 @@
-# cart
+# Example web application using emit and wisp
 
-[![Package Version](https://img.shields.io/hexpm/v/cart)](https://hex.pm/packages/cart)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/cart/)
+The example contains a HTMX powered frontend, so you can run it with `gleam server` and play around on `localhost`.
 
-```sh
-gleam add cart@1
-```
-```gleam
-import cart
+> ⚠️ The example uses the default in-memory persistance layer, so it will lose all data on server restart.
 
-pub fn main() {
-  // TODO: An example of the project in use
-}
-```
-
-Further documentation can be found at <https://hexdocs.pm/cart>.
-
-## Development
-
-```sh
-gleam run   # Run the project
-gleam test  # Run the tests
-```
+1. In the `domain.gleam` we define the models, and handlers for our business logic
+2. In the `cart.gleam` we configure gleam, set up a route handler and configure wisp
+3. In the `router.gleam` we handle api routes and use emit to get state and process commands
