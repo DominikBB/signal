@@ -86,6 +86,8 @@ pub fn event_bus_borodcasts_events_to_subscribers_test() {
   let assert Ok(_) = create_aggregates(sut, sim)
   let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
 
+  process.sleep(50)
+
   process.call(event_counter, signal.GetConsumerState(_), 50)
   |> should.equal(3)
 
@@ -262,7 +264,6 @@ fn process_commands(
   result.all(
     list.map(commands_to_handle, fn(cmd) {
       let #(quirk, command) = cmd
-
       case signal.handle_command(sut, command), quirk {
         Error(_), option.None -> Error(cmd)
         _, _ -> Ok(cmd)

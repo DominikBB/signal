@@ -11,7 +11,7 @@ import gleam/string
 
 const warn_at_wal_size = 100
 
-const process_call_timeout = 50
+const process_call_timeout = 100
 
 // -----------------------------------------------------------------------------
 //                              Exorted interface                               
@@ -933,7 +933,7 @@ pub type StoreMessage(event) {
     aggregate_id: String,
   )
   // Used by the persistance layer to confirm the event is stored
-  PersistanceState(ids: List(Event(event)), completed: Bool)
+  PersistanceState(ids: List(Event(event)))
   ShutdownStore
 }
 
@@ -1007,18 +1007,21 @@ fn store_handler(
         process.send(s, result)
         actor.continue(state)
       }
-      PersistanceState(processed, _) -> {
+      PersistanceState(processed) -> {
         let #(_, not_yet_processed) =
           list.partition(processing, fn(e) { list.contains(processed, e) })
 
         log_telemetry(
           logger,
-          StorePersistanceCompleted(list.length(processed), list.length(wal)),
+          StorePersistanceCompleted(
+            list.length(processed),
+            list.length(not_yet_processed),
+          ),
         )
 
         case list.is_empty(not_yet_processed) {
-          True -> actor.continue(#(wal, not_yet_processed))
-          False -> {
+          False -> actor.continue(#(wal, not_yet_processed))
+          True -> {
             process.send(persistor, StoreEvents(wal))
             log_telemetry(
               logger,
@@ -1159,7 +1162,7 @@ fn log_telemetry(
       StoreSubmittedBatchForPersistance(_) ->
         "Submitted | events for persistance"
       StorePersistanceCompleted(_, _) ->
-        "Persisted | events, | events are waiting for the next batch"
+        "Persisted | events, | events have not yet been reported persisted."
     }),
   )
 }
