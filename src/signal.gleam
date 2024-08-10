@@ -1013,10 +1013,14 @@ fn in_memory_persistance_handler(
 ) {
   case message {
     GetStoredEvents(s, aggregate_id) -> {
-      process.send(
-        s,
-        Ok(list.filter(state, fn(e) { e.aggregate_id == aggregate_id })),
-      )
+      case list.any(state, fn(e) { e.aggregate_id == aggregate_id }) {
+        True ->
+          process.send(
+            s,
+            Ok(list.filter(state, fn(e) { e.aggregate_id == aggregate_id })),
+          )
+        False -> process.send(s, Error("Aggregate not found"))
+      }
       actor.continue(state)
     }
     IsIdentityAvailable(s, aggregate_id) -> {
