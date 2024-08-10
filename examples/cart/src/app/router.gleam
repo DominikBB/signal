@@ -51,7 +51,7 @@ pub fn pay_for_cart(
     // We also want to get the revenue report
   }
 
-  let rev = process.call(revenue_projection, signal.GetConsumerState(_), 5)
+  let rev = process.call(revenue_projection, signal.GetConsumerState(_), 50)
 
   case result {
     Ok(_) ->

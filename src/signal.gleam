@@ -11,6 +11,8 @@ import gleam/string
 
 const warn_at_wal_size = 100
 
+const process_call_timeout = 50
+
 // -----------------------------------------------------------------------------
 //                              Exorted interface                               
 // -----------------------------------------------------------------------------
@@ -383,8 +385,8 @@ pub fn aggregate(
   signal: Signal(aggregate, command, event),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(signal, GetPool, 5)
-  process.call(pool, GetAggregate(_, id), 5)
+  let pool = process.call(signal, GetPool, process_call_timeout)
+  process.call(pool, GetAggregate(_, id), process_call_timeout)
 }
 
 /// Creates a new aggregate with a given ID.
@@ -395,8 +397,8 @@ pub fn create(
   signal: Signal(aggregate, command, event),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(signal, GetPool, 5)
-  process.call(pool, CreateAggregate(_, id), 5)
+  let pool = process.call(signal, GetPool, process_call_timeout)
+  process.call(pool, CreateAggregate(_, id), process_call_timeout)
 }
 
 /// Use this function to have your aggregate process a command.
@@ -410,7 +412,7 @@ pub fn handle_command(
   agg: Aggregate(aggregate, command, event),
   command: command,
 ) -> Result(aggregate, String) {
-  process.call(agg, HandleCommand(_, command), 5)
+  process.call(agg, HandleCommand(_, command), process_call_timeout)
 }
 
 /// Use this function to get the current state of your aggregate.
@@ -420,21 +422,21 @@ pub fn handle_command(
 /// |> signal.get_state()
 /// ```
 pub fn get_state(agg: Aggregate(aggregate, command, event)) -> aggregate {
-  process.call(agg, State(_), 5)
+  process.call(agg, State(_), process_call_timeout)
 }
 
 /// Gets the id of the aggregate actor.
 /// 
 pub fn get_id(agg: Aggregate(aggregate, command, event)) -> String {
-  process.call(agg, Identity(_), 5)
+  process.call(agg, Identity(_), process_call_timeout)
 }
 
 /// Gets the current size of the aggregate pool in memory, mainly for testing.
 /// 
 pub fn get_current_pool_size(signal: Signal(aggregate, command, event)) -> Int {
-  let pool = process.call(signal, GetPool(_), 5)
+  let pool = process.call(signal, GetPool(_), process_call_timeout)
 
-  process.call(pool, PoolSize(_), 5)
+  process.call(pool, PoolSize(_), process_call_timeout)
 }
 
 // -----------------------------------------------------------------------------
@@ -779,7 +781,7 @@ fn evict_aggregates_workflow(
 }
 
 fn store_has_aggregate(store: Store(event), key: String) {
-  let response = process.call(store, IdExists(_, key), 5)
+  let response = process.call(store, IdExists(_, key), process_call_timeout)
 
   case response {
     Error(_) | Ok(False) -> False
@@ -810,7 +812,7 @@ fn gather_aggregate_from_store(
   logger: process.Subject(TelemetryMessage),
 ) {
   log_telemetry(logger, PoolHydratingAggregate(id))
-  case process.call(store, GetEvents(_, id), 5) {
+  case process.call(store, GetEvents(_, id), process_call_timeout) {
     Error(msg) -> Error(msg)
     Ok(events) -> {
       log_telemetry(logger, PoolHydratedAggregate(id))
@@ -990,12 +992,18 @@ fn store_handler(
         }
       }
       GetEvents(s, id) -> {
-        let events = process.call(persistor, GetStoredEvents(_, id), 5)
+        let events =
+          process.call(persistor, GetStoredEvents(_, id), process_call_timeout)
         process.send(s, events)
         actor.continue(state)
       }
       IdExists(s, id) -> {
-        let result = process.call(persistor, IsIdentityAvailable(_, id), 5)
+        let result =
+          process.call(
+            persistor,
+            IsIdentityAvailable(_, id),
+            process_call_timeout,
+          )
         process.send(s, result)
         actor.continue(state)
       }

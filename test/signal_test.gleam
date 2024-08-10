@@ -73,7 +73,7 @@ pub fn aggregate_processes_commands_and_emits_events_test() {
 
   list.map(sim.list_of_aggregates, fn(agg) {
     let assert Ok(events) =
-      process.call(store, signal.GetStoredEvents(_, agg.id), 5)
+      process.call(store, signal.GetStoredEvents(_, agg.id), 50)
 
     list.length(events)
     |> should.equal(1)
@@ -86,10 +86,10 @@ pub fn event_bus_borodcasts_events_to_subscribers_test() {
   let assert Ok(_) = create_aggregates(sut, sim)
   let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
 
-  process.call(event_counter, signal.GetConsumerState(_), 5)
+  process.call(event_counter, signal.GetConsumerState(_), 50)
   |> should.equal(3)
 
-  process.call(aggregate_counter, signal.GetConsumerState(_), 5)
+  process.call(aggregate_counter, signal.GetConsumerState(_), 50)
   |> should.equal(3)
 }
 
@@ -334,8 +334,10 @@ fn test_logger(
   state: List(signal.TelemetryEvent),
 ) {
   case message {
-    signal.Report(event, _) ->
+    signal.Report(event, _) -> {
+      // io.debug(event)
       actor.continue([event, ..state] |> list.reverse())
+    }
     signal.ShutdownTelemetry -> actor.Stop(process.Normal)
   }
 }

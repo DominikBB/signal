@@ -231,9 +231,13 @@ fn create_aggregates(
   number: Int,
   _test_what: TestWhat,
 ) {
-  let ids =
-    random.fixed_size_set(random.fixed_size_string(25), number)
-    |> random.sample(sim.generator_seed)
+  let ids = case number {
+    1 -> set.from_list(["1"])
+    3 -> set.from_list(["1", "2", "3"])
+    _ ->
+      random.fixed_size_set(random.fixed_size_string(25), number)
+      |> random.sample(sim.generator_seed)
+  }
 
   let aggregates =
     set.to_list(ids)
