@@ -1,5 +1,6 @@
 import fixture
 import gleam/erlang/process
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
@@ -185,6 +186,7 @@ pub fn aggregate_will_process_events_based_on_aggregate_version_sort_order() {
 // -----------------------------------------------------------------------------
 
 fn set_up_emit() {
+  let assert Ok(logger) = actor.start([], test_logger)
   let assert Ok(persistance) = actor.start([], test_persistance_handler)
   let assert Ok(event_counter) = actor.start(0, event_count_subscriber)
   let assert Ok(aggregate_counter) =
@@ -205,6 +207,7 @@ fn set_up_emit() {
     |> signal.with_persistance_layer(persistance)
     |> signal.with_subscriber(signal.Consumer(event_counter))
     |> signal.with_subscriber(signal.Consumer(aggregate_counter))
+    |> signal.with_custom_logger(logger)
     |> signal.start()
 
   #(signal, event_counter, aggregate_counter, persistance)
@@ -323,5 +326,16 @@ fn unique_aggregate_counter_subscriber(
       actor.continue(aggregate_ids)
     }
     signal.ShutdownConsumer -> actor.Stop(process.Normal)
+  }
+}
+
+fn test_logger(
+  message: signal.TelemetryMessage,
+  state: List(signal.TelemetryEvent),
+) {
+  case message {
+    signal.Report(event, _) ->
+      actor.continue([event, ..state] |> list.reverse())
+    signal.ShutdownTelemetry -> actor.Stop(process.Normal)
   }
 }
