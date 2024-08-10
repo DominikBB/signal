@@ -240,10 +240,10 @@ pub type LogLevel {
 /// )
 /// 
 /// let store = signal.configure(aggregate_config)
-/// |> with_persistance_layer(my_storage)
-/// |> with_subscriber(my_notification_client)
-/// |> with_subscriber(my_metrics_counter)
-/// |> start()
+/// |> signal.with_persistance_layer(my_storage)
+/// |> signal.with_subscriber(my_notification_client)
+/// |> signal.with_subscriber(my_metrics_counter)
+/// |> signal.start()
 /// ```
 pub fn configure(
   agg: AggregateConfig(aggregate, command, event),
@@ -264,34 +264,22 @@ pub fn configure(
 ///  
 /// This is a great way of projecting state in a very specific way. Think of it as letting you create different read models of your data, or trigger some other specifics when an event is generated.
 ///
-/// You can event use this method to trigger commands to your other aggregates, but be careful, that can make it difficult to track the state of you application!
+/// You can even use this method to trigger commands to your other aggregates, but be careful, that can make it difficult to track the state of you application!
 ///
-/// *Example policy:*
-/// ```gleam
-/// fn email_readers(event: MyBlogEvent) {
-///   case event {
-///     PostPublished -> {
-///       email_everyone_interested(...)
-///       Ok(Nil)
-///     }
-///     _ -> Ok(Nil)
-///   }
-/// }
-/// ```
-/// Couple of notes on policies:
-/// - Signal will ignore return values of these functions
-/// - WIP Signal currently does not retry failed policies, it will do in the future
-///  
 /// *Example consumer:*
 /// ```gleam
-/// fn event_counter( message: MyBlogEvent, event_count: Int ) {
+/// fn event_counter( message: signal.ConsumerMessage(MyBlogEvent), event_count: Int ) {
 ///   case messasge {
-///     Shutdown -> actor.stop(process.Normal)
-///     _ -> actor.continue(event_count + 1)
+///     ShutdownConsumer -> actor.stop(process.Normal)
+///     Consume(signal.Event(_)) -> actor.continue(event_count + 1)
+///     GetConsumerState(s) -> {
+///       process.send(s, event_count)
+///       actor.continue(event_count)
+///     }
 ///   }
 /// } 
 /// ```
-/// There are a few things to not about Consumers:
+/// There are a few things to note about Consumers:
 /// - Signal will not start or stop your consumers, their lifetime is in your control.
 /// - Signal will ignore any returned data
 /// - Your actor should accept the messages which are actually the Events you defined at configuration time
@@ -372,13 +360,13 @@ pub fn start(config: SignalConfig(aggregate, state, command, event)) {
 /// 
 /// *Command handling example:*
 /// ```gleam
-/// let result = signal.get_aggregate(em, "how-to-gleam")
+/// let result = signal.aggregate(em, "how-to-gleam")
 /// |> signal.handle_command(CommentOnPost("how-to-gleam"))
 /// ```
 ///
 /// *Getting state example:*
 /// ```gleam
-/// let post = signal.get_aggregate(em, "how-to-gleam")
+/// let post = signal.aggregate(em, "how-to-gleam")
 /// |> signal.get_state()
 /// ```
 pub fn aggregate(
@@ -404,7 +392,7 @@ pub fn create(
 /// Use this function to have your aggregate process a command.
 /// 
 /// ```gleam
-/// let result = signal.get_aggregate(em, "how-to-gleam")
+/// let result = signal.aggregate(em, "how-to-gleam")
 /// |> signal.handle_command(CreatePost("how-to-gleam"))
 /// ```
 /// 
@@ -418,7 +406,7 @@ pub fn handle_command(
 /// Use this function to get the current state of your aggregate.
 /// 
 /// ```gleam
-/// let post = signal.get_aggregate(em, "how-to-gleam")
+/// let post = signal.aggregate(em, "how-to-gleam")
 /// |> signal.get_state()
 /// ```
 pub fn get_state(agg: Aggregate(aggregate, command, event)) -> aggregate {

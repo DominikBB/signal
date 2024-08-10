@@ -22,10 +22,6 @@ pub fn handle_request(
   fn(req: Request) -> Response {
     use _req <- web.middleware(req)
 
-    // TODO Get or create the cart
-
-    // TODO Process the cart command
-
     case req.method, wisp.path_segments(req) {
       http.Get, ["cart", id] -> cart_overview(id)
       http.Post, ["cart", id] -> add_to_cart(id, req, signal)
@@ -71,7 +67,7 @@ pub fn remove_from_cart(
   let result = {
     // Get the cart and handle the command
     use cart <- result.try(signal.aggregate(signal, id))
-    signal.handle_command(cart, domain.RemoveFromCart(wisp.escape_html(sku)))
+    signal.handle_command(cart, domain.RemoveFromCart(sku))
   }
 
   case result {
@@ -107,7 +103,7 @@ pub fn add_to_cart(
       Error(_) -> signal.create(signal, id)
     })
 
-    // Then we handle the command and repond with new state
+    // Then we handle the command and respond with new state
     signal.handle_command(
       cart,
       domain.AddToCart(domain.Product(wisp.escape_html(sku), 1, price)),
