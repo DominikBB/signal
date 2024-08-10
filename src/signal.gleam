@@ -209,7 +209,7 @@ pub type TelemetryEvent {
 
 /// Just a basic log severity model
 /// 
-pub type {
+pub type LogLevel {
   Debug
   Info
   Warning
