@@ -1,8 +1,8 @@
-name: release signal
+name: release a signal extension
 
 on:
     push:
-        tags: ['v*']
+        tags: ['*-v*']
 
 jobs:
     build:
@@ -16,8 +16,9 @@ jobs:
                   gleam-version: '1.4.0'
 
             - run: cargo install tomlq
+            - run: cd "extensions/${{ github.ref_name%-v* }}"
             - run: |
-                  if [ "v$(tomlq version -f gleam.toml)" == "${{ github.ref_name }}" ]; then
+                  if [ "v$(tomlq version -f gleam.toml)" == "${{ github.ref_name#*- }}" ]; then
                     exit 0
                   fi
                   echo "tag does not match version in gleam.toml, refusing to publish"
