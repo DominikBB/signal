@@ -329,11 +329,33 @@ pub fn with_pool_size_limit(
   SignalConfig(..config, pool_size: aggregates_in_memory)
 }
 
+/// Allows for custom logging of telemetry events.
+/// 
 pub fn with_custom_logger(
   config: SignalConfig(aggregate, state, command, event),
   logger: process.Subject(TelemetryMessage),
 ) -> SignalConfig(aggregate, state, command, event) {
   SignalConfig(..config, custom_logger: Some(logger))
+}
+
+/// Disables info level logging for the **default logger**.
+/// 
+/// > ⚠️ this setting does not affect custom loggers.
+/// 
+pub fn without_info_logging(
+  config: SignalConfig(aggregate, state, command, event),
+) -> SignalConfig(aggregate, state, command, event) {
+  SignalConfig(..config, log_info: False)
+}
+
+/// Disables debug level logging for the **default logger**.
+/// 
+/// > ⚠️ this setting does not affect custom loggers.
+/// 
+pub fn without_debug_logging(
+  config: SignalConfig(aggregate, state, command, event),
+) -> SignalConfig(aggregate, state, command, event) {
+  SignalConfig(..config, log_debug: False)
 }
 
 /// Starts the signal services and returns a subject used to interact with the event store.
