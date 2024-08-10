@@ -273,7 +273,7 @@ fn process_commands(
 // -----------------------------------------------------------------------------
 
 fn test_persistance_handler(
-  message: signal.PersistanceInterface(event),
+  message: signal.PersistanceMessage(event),
   state: List(signal.Event(event)),
 ) {
   case message {

@@ -1,13 +1,11 @@
 import gleam/dict.{type Dict}
 import gleam/erlang/process
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/task
 import gleam/result
-import gleam/set
 import gleam/string
 
 // -----------------------------------------------------------------------------
@@ -20,12 +18,12 @@ import gleam/string
 /// 
 ///
 pub type Signal(aggregate, command, event) =
-  process.Subject(EmitMessages(aggregate, command, event))
+  process.Subject(SignalMessage(aggregate, command, event))
 
 /// The base signal process, it handles the internal operation of signal for a given aggregate type.
 /// 
 ///
-pub opaque type EmitMessages(aggregate, command, event) {
+pub opaque type SignalMessage(aggregate, command, event) {
   GetPool(reply_with: process.Subject(Pool(aggregate, command, event)))
   Shutdown
 }
@@ -120,7 +118,7 @@ pub type EventHandler(state, event) =
 /// 
 /// > ⚠️ Persistance actor has to report the result of the StoreEvents message in form of a PersistanceState event. This allows signal to handle a write ahead log and batch event storage operations. 
 /// 
-pub type PersistanceInterface(event) {
+pub type PersistanceMessage(event) {
   GetStoredEvents(process.Subject(Result(List(Event(event)), String)), String)
   IsIdentityAvailable(process.Subject(Result(Bool, String)), String)
   StoreEvents(List(Event(event)))
@@ -158,10 +156,10 @@ pub type ConsumerMessage(state, event) {
 
 /// Configures the internals of an signal service.
 ///
-pub opaque type EmitConfig(aggregate, state, command, event) {
-  EmitConfig(
+pub opaque type SignalConfig(aggregate, state, command, event) {
+  SignalConfig(
     aggregate: AggregateConfig(aggregate, command, event),
-    persistance_handler: Option(process.Subject(PersistanceInterface(event))),
+    persistance_handler: Option(process.Subject(PersistanceMessage(event))),
     subscribers: List(Subscriber(state, event)),
     pool_size: Int,
   )
@@ -175,6 +173,47 @@ pub type AggregateConfig(aggregate, command, event) {
     command_handler: CommandHandler(aggregate, command, event),
     event_handler: EventHandler(aggregate, event),
   )
+}
+
+/// Simple message interface for logging events.
+/// 
+/// The template string is separated with | and is used to format the message.
+/// It can be populated with the telemetry event data using a helper function format_telemetry_message.
+/// 
+pub type TelemetryMessage {
+  Report(event: TelemetryEvent, template: String, msg: String)
+  ShutdownLogger
+}
+
+/// Telemetry events produced by signal, these can be used for logging, metric collection and tracing
+/// 
+pub type TelemetryEvent {
+  PoolCreatedAggregate(aggregate_id: String)
+  PoolHydratingAggregate(aggregate_id: String)
+  PoolHydratedAggregate(aggregate_id: String)
+  PoolAggregateNotFound(aggregate_id: String)
+  PoolRebalancingStarted(size: Int)
+  PoolEvictedAggregate(aggregate_id: String)
+  PoolRebalancingCompleted(new_size: Int)
+  AggregateProcessingCommand(aggregate_id: String)
+  AggregateProcessedCommand(aggregate_id: String)
+  AggregateCommandProcessingFailed(aggregate_id: String)
+  AggregateEventsProduced(aggregate_id: String)
+  BusTriggeringSubscribers(subscribers: Int)
+  BusSubscribersInformed(subscribers: Int)
+  StorePushedEventToWriteAheadLog(pool_size: Int)
+  StoreWriteAheadLogSizeWarning(pool_size: Int)
+  StoreSubmittedBatchForPersistance(batch_size: Int)
+  StorePersistanceCompleted(batch_size: Int)
+}
+
+/// Just a basic log severity model
+/// 
+pub type {
+  Debug
+  Info
+  Warning
+  Error
 }
 
 // --------------------------- Exported functions ------------------------------
@@ -198,8 +237,8 @@ pub type AggregateConfig(aggregate, command, event) {
 /// ```
 pub fn configure(
   agg: AggregateConfig(aggregate, command, event),
-) -> EmitConfig(aggregate, state, command, event) {
-  EmitConfig(
+) -> SignalConfig(aggregate, state, command, event) {
+  SignalConfig(
     aggregate: agg,
     persistance_handler: None,
     subscribers: [],
@@ -245,10 +284,10 @@ pub fn configure(
 /// - Your actor should accept the messages which are actually the Events you defined at configuration time
 /// 
 pub fn with_subscriber(
-  config: EmitConfig(aggregate, state, command, event),
+  config: SignalConfig(aggregate, state, command, event),
   sub: Subscriber(state, event),
-) -> EmitConfig(aggregate, state, command, event) {
-  EmitConfig(..config, subscribers: [sub, ..config.subscribers])
+) -> SignalConfig(aggregate, state, command, event) {
+  SignalConfig(..config, subscribers: [sub, ..config.subscribers])
 }
 
 /// Configures signal to store events using a particular persistance layer.
@@ -258,10 +297,10 @@ pub fn with_subscriber(
 /// WIP - I am working on some persistance layers, but for now, you can bring your own, or play around with in-memory persistance.
 /// 
 pub fn with_persistance_layer(
-  config: EmitConfig(aggregate, state, command, event),
-  persist: process.Subject(PersistanceInterface(event)),
-) -> EmitConfig(aggregate, state, command, event) {
-  EmitConfig(..config, persistance_handler: Some(persist))
+  config: SignalConfig(aggregate, state, command, event),
+  persist: process.Subject(PersistanceMessage(event)),
+) -> SignalConfig(aggregate, state, command, event) {
+  SignalConfig(..config, persistance_handler: Some(persist))
 }
 
 /// Defines the maximum number of aggregates kept in memory. **Defaults to 100**,
@@ -273,15 +312,15 @@ pub fn with_persistance_layer(
 /// > you might want to consider breaking up your aggregate and redesigning it, or storing some data using a different persistance method.
 /// 
 pub fn with_pool_size_limit(
-  config: EmitConfig(aggregate, state, command, event),
+  config: SignalConfig(aggregate, state, command, event),
   aggregates_in_memory: Int,
 ) {
-  EmitConfig(..config, pool_size: aggregates_in_memory)
+  SignalConfig(..config, pool_size: aggregates_in_memory)
 }
 
 /// Starts the signal services and returns a subject used to interact with the event store.
 /// 
-pub fn start(config: EmitConfig(aggregate, state, command, event)) {
+pub fn start(config: SignalConfig(aggregate, state, command, event)) {
   use service <- result.try(emit_init(config))
 
   actor.start(Nil, emit_handler(service))
@@ -370,7 +409,7 @@ type EmitService(aggregate, command, event) {
   )
 }
 
-fn emit_init(config: EmitConfig(aggregate, state, command, event)) {
+fn emit_init(config: SignalConfig(aggregate, state, command, event)) {
   use store_handler <- result.try(result.replace_error(
     set_up_store_handler(config.persistance_handler),
     actor.InitTimeout,
@@ -386,7 +425,7 @@ fn emit_init(config: EmitConfig(aggregate, state, command, event)) {
 }
 
 fn emit_handler(cfg: EmitService(aggregate, command, event)) {
-  fn(message: EmitMessages(aggregate, command, event), _state: Nil) {
+  fn(message: SignalMessage(aggregate, command, event), _state: Nil) {
     case message {
       GetPool(s) -> {
         process.send(s, cfg.pool)
@@ -761,12 +800,12 @@ fn notify_store(event: Event(event), store: Store(event)) {
 
 /// An internal actor used to manage storage of events.
 /// 
-pub type Store(event) =
-  process.Subject(StoreMessages(event))
+type Store(event) =
+  process.Subject(StoreMessage(event))
 
 /// Messages handled by the Store actor, when creating custom persistance layers, you should report persistance state to PersistanceState.
 /// 
-pub type StoreMessages(event) {
+pub type StoreMessage(event) {
   StoreEvent(event: Event(event))
   GetEvents(
     reply_with: process.Subject(Result(List(Event(event)), String)),
@@ -782,7 +821,7 @@ pub type StoreMessages(event) {
 }
 
 fn set_up_store_handler(
-  persistor: Option(process.Subject(PersistanceInterface(event))),
+  persistor: Option(process.Subject(PersistanceMessage(event))),
 ) {
   case persistor {
     Some(p) -> Ok(store_handler(p))
@@ -797,9 +836,9 @@ fn set_up_store_handler(
 
 /// Maintains a write ahead log to keep the system performant regardless of the persitance layer
 /// 
-fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
+fn store_handler(persistor: process.Subject(PersistanceMessage(event))) {
   fn(
-    message: StoreMessages(event),
+    message: StoreMessage(event),
     state: #(List(Event(event)), List(Event(event))),
   ) {
     case message {
@@ -842,7 +881,7 @@ fn store_handler(persistor: process.Subject(PersistanceInterface(event))) {
 // -----------------------------------------------------------------------------
 
 fn in_memory_persistance_handler(
-  message: PersistanceInterface(event),
+  message: PersistanceMessage(event),
   state: List(Event(event)),
 ) {
   case message {
@@ -863,5 +902,61 @@ fn in_memory_persistance_handler(
     }
     StoreEvents(events) -> actor.continue(list.append(state, events))
     ShutdownPersistanceLayer -> actor.Stop(process.Normal)
+  }
+}
+
+// -----------------------------------------------------------------------------
+//                                  Telemetry                                   
+// -----------------------------------------------------------------------------
+
+/// Formats a telemetry message using a template string and telemetry event data.
+/// 
+pub fn format_telemetry_message(data: TelemetryEvent, template: String) {
+  list.interleave([string.split(template, "|"), telemetry_to_string_list(data)])
+}
+
+fn telemetry_to_string_list(ev: TelemetryEvent) {
+  case ev {
+    PoolCreatedAggregate(id) -> [id]
+    PoolHydratingAggregate(id) -> [id]
+    PoolHydratedAggregate(id) -> [id]
+    PoolAggregateNotFound(id) -> [id]
+    PoolRebalancingStarted(size) -> [int.to_string(size)]
+    PoolEvictedAggregate(id) -> [id]
+    PoolRebalancingCompleted(size) -> [int.to_string(size)]
+    AggregateProcessingCommand(id) -> [id]
+    AggregateProcessedCommand(id) -> [id]
+    AggregateCommandProcessingFailed(id) -> [id]
+    AggregateEventsProduced(id) -> [id]
+    BusTriggeringSubscribers(subscribers) -> [int.to_string(subscribers)]
+    BusSubscribersInformed(subscribers) -> [int.to_string(subscribers)]
+    StorePushedEventToWriteAheadLog(pool_size) -> [int.to_string(pool_size)]
+    StoreWriteAheadLogSizeWarning(pool_size) -> [int.to_string(pool_size)]
+    StoreSubmittedBatchForPersistance(batch_size) -> [int.to_string(batch_size)]
+    StorePersistanceCompleted(batch_size) -> [int.to_string(batch_size)]
+  }
+}
+
+/// Default logging level for telemetry events, when implementing a custom logger, you can use this to filter out events.
+/// 
+pub fn telemetry_log_level(ev: TelemetryEvent) {
+  case ev {
+    PoolCreatedAggregate(_) -> Debug
+    PoolHydratingAggregate(_) -> Debug
+    PoolHydratedAggregate(_) -> Debug
+    PoolAggregateNotFound(_) -> Error
+    PoolRebalancingStarted(_) -> Debug
+    PoolEvictedAggregate(_) -> Debug
+    PoolRebalancingCompleted(_) -> Debug
+    AggregateProcessingCommand(_) -> Info
+    AggregateProcessedCommand(_) -> Info
+    AggregateCommandProcessingFailed(_) -> Error
+    AggregateEventsProduced(_) -> Debug
+    BusTriggeringSubscribers(_) -> Debug
+    BusSubscribersInformed(_) -> Debug
+    StorePushedEventToWriteAheadLog(_) -> Debug
+    StoreWriteAheadLogSizeWarning(_) -> Warning
+    StoreSubmittedBatchForPersistance(_) -> Debug
+    StorePersistanceCompleted(_) -> Debug
   }
 }
