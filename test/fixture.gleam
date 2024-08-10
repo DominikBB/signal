@@ -1,5 +1,3 @@
-import gleam/dict
-import gleam/io
 import gleam/list
 import signal
 
@@ -77,20 +75,20 @@ pub fn command_handler() -> signal.CommandHandler(
       RemovePackage(tracking_nr) ->
         case take_package(state.payload, tracking_nr) {
           Ok(p) if p.status == Assigned -> Ok([PackageRemoved(tracking_nr)])
-          Ok(p) -> Error("Its too late for that!")
+          Ok(_) -> Error("Its too late for that!")
           _ -> Error("Package not found!")
         }
       DeliverPackage(tracking_nr) ->
         case take_package(state.payload, tracking_nr) {
           Ok(p) if p.status == Assigned -> Ok([PackageDelivered(tracking_nr)])
-          Ok(p) -> Error("Its too late for that!")
+          Ok(_) -> Error("Its too late for that!")
           _ -> Error("Package not found!")
         }
       UnableToDeliverPackage(tracking_nr) ->
         case take_package(state.payload, tracking_nr) {
           Ok(p) if p.status == Assigned ->
             Ok([PackageDeliveryFailed(tracking_nr)])
-          Ok(p) -> Error("Its too late for that!")
+          Ok(_) -> Error("Its too late for that!")
           _ -> Error("Package not found!")
         }
       CrazyCommand -> {
@@ -126,7 +124,7 @@ pub fn event_handler() -> signal.EventHandler(DeliveryRoute, DeliveryEvent) {
       RouteCreated(id) -> InProgressRoute(..state, id: id)
       PackageAssigned(pkg) ->
         InProgressRoute(..state, payload: [pkg, ..state.payload])
-      PackageAssignmentFailed(tracking_nr) -> state
+      PackageAssignmentFailed(_) -> state
       PackageRemoved(tracking_nr) ->
         InProgressRoute(
           ..state,

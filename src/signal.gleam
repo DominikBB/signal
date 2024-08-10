@@ -1,6 +1,7 @@
 import gleam/dict.{type Dict}
 import gleam/erlang/process
 import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -181,7 +182,7 @@ pub type AggregateConfig(aggregate, command, event) {
 /// It can be populated with the telemetry event data using a helper function format_telemetry_message.
 /// 
 pub type TelemetryMessage {
-  Report(event: TelemetryEvent, template: String, msg: String)
+  Report(event: TelemetryEvent, template: String)
   ShutdownLogger
 }
 
@@ -210,10 +211,10 @@ pub type TelemetryEvent {
 /// Just a basic log severity model
 /// 
 pub type LogLevel {
-  Debug
-  Info
-  Warning
-  Error
+  LogDebug
+  LogInfo
+  LogWarning
+  LogError
 }
 
 // --------------------------- Exported functions ------------------------------
@@ -913,6 +914,7 @@ fn in_memory_persistance_handler(
 /// 
 pub fn format_telemetry_message(data: TelemetryEvent, template: String) {
   list.interleave([string.split(template, "|"), telemetry_to_string_list(data)])
+  |> string.concat
 }
 
 fn telemetry_to_string_list(ev: TelemetryEvent) {
@@ -941,22 +943,52 @@ fn telemetry_to_string_list(ev: TelemetryEvent) {
 /// 
 pub fn telemetry_log_level(ev: TelemetryEvent) {
   case ev {
-    PoolCreatedAggregate(_) -> Debug
-    PoolHydratingAggregate(_) -> Debug
-    PoolHydratedAggregate(_) -> Debug
-    PoolAggregateNotFound(_) -> Error
-    PoolRebalancingStarted(_) -> Debug
-    PoolEvictedAggregate(_) -> Debug
-    PoolRebalancingCompleted(_) -> Debug
-    AggregateProcessingCommand(_) -> Info
-    AggregateProcessedCommand(_) -> Info
-    AggregateCommandProcessingFailed(_) -> Error
-    AggregateEventsProduced(_) -> Debug
-    BusTriggeringSubscribers(_) -> Debug
-    BusSubscribersInformed(_) -> Debug
-    StorePushedEventToWriteAheadLog(_) -> Debug
-    StoreWriteAheadLogSizeWarning(_) -> Warning
-    StoreSubmittedBatchForPersistance(_) -> Debug
-    StorePersistanceCompleted(_) -> Debug
+    PoolCreatedAggregate(_) -> LogDebug
+    PoolHydratingAggregate(_) -> LogDebug
+    PoolHydratedAggregate(_) -> LogDebug
+    PoolAggregateNotFound(_) -> LogError
+    PoolRebalancingStarted(_) -> LogDebug
+    PoolEvictedAggregate(_) -> LogDebug
+    PoolRebalancingCompleted(_) -> LogDebug
+    AggregateProcessingCommand(_) -> LogInfo
+    AggregateProcessedCommand(_) -> LogInfo
+    AggregateCommandProcessingFailed(_) -> LogError
+    AggregateEventsProduced(_) -> LogDebug
+    BusTriggeringSubscribers(_) -> LogDebug
+    BusSubscribersInformed(_) -> LogDebug
+    StorePushedEventToWriteAheadLog(_) -> LogDebug
+    StoreWriteAheadLogSizeWarning(_) -> LogWarning
+    StoreSubmittedBatchForPersistance(_) -> LogDebug
+    StorePersistanceCompleted(_) -> LogDebug
+  }
+}
+
+// -----------------------------------------------------------------------------
+//                               Console logger                                 
+// -----------------------------------------------------------------------------
+
+/// A simple console logger that logs telemetry events to the console.
+/// 
+pub fn console_logger(log_info: Bool, log_debug: Bool) {
+  fn(message: TelemetryMessage, _: Nil) {
+    case message {
+      Report(event, template) -> {
+        let log_level = telemetry_log_level(event)
+        case log_level {
+          LogError ->
+            io.print("ERROR: " <> format_telemetry_message(event, template))
+          LogWarning ->
+            io.print("WARNING: " <> format_telemetry_message(event, template))
+          LogInfo if log_info ->
+            io.print("INFO: " <> format_telemetry_message(event, template))
+          LogDebug if log_debug ->
+            io.print("DEBUG: " <> format_telemetry_message(event, template))
+          _ -> Nil
+        }
+
+        actor.continue(Nil)
+      }
+      ShutdownLogger -> actor.Stop(process.Normal)
+    }
   }
 }
