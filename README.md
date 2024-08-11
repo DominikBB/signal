@@ -69,7 +69,7 @@ These are the features I see version 1 having:
 
 -   [x] Logging handler for customizing logging
 -   [x] Persistance layer test suite
--   [ ] Postgres persistance layer
+-   [x] Postgres persistance layer
 -   [ ] Aggregate replay to a specific version
 -   [ ] Genesis command handler for customizing creation of a new aggregate
 -   [ ] Closure event handler, to make deleting and evicting aggregates more customizable
