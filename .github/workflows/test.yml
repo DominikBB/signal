@@ -20,7 +20,11 @@ jobs:
             - run: gleam test
             - run: gleam format --check src test
 
-            - run: sudo systemctl start postgresql.service
+            - name: Enable PostgreSQL
+              run: sudo systemctl start postgresql.service
+
+            - name: Create a database
+              run: sudo createdb -u postgres signal_dev
 
             - name: Signal PGO tests
               run: gleam test

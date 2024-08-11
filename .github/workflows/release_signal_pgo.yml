@@ -16,7 +16,6 @@ jobs:
                   gleam-version: '1.4.0'
 
             - run: cargo install tomlq
-            - run: sudo systemctl start postgresql.service
 
             - name: Ensure correct version
               run: |
@@ -27,6 +26,12 @@ jobs:
                   echo signal_pgo-v$(tomlq version -f gleam.toml)
                   exit 1
               working-directory: extensions/signal_pgo
+
+            - name: Enable PostgreSQL
+              run: sudo systemctl start postgresql.service
+
+            - name: Create a database
+              run: sudo createdb -u postgres signal_dev
 
             - name: Signal PGO format
               run: gleam format
