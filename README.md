@@ -63,11 +63,11 @@ let state = signal.get_state(aggregate)
 
 These are the features I see version 1 having:
 
+-   [x] Logging handler for customizing logging
+-   [x] Persistance layer test suite
 -   [ ] Gleam PGO persistance layer
 -   [ ] Aggregate replay to a specific version
--   Additional customization with handlers
-    -   [ ] Logging handler for customizing logging
-    -   [ ] Genesis event handler for customizing creation of a new aggregate
-    -   [ ] Dead letter event handler for customizing aggregate eviction from memory
--   [ ] Retry for Policy subscribers
+-   [ ] Genesis command handler for customizing creation of a new aggregate
+-   [ ] Closure event handler, to make deleting and evicting aggregates more customizable
 -   [ ] Aggregate pool management based on activity instead of a queue
+-   [ ] Test and develop policy subscribers further
