@@ -1,11 +1,12 @@
-# postgres_persistance
+# signal_postgres
 
-[![Package Version](https://img.shields.io/hexpm/v/postgres_persistance)](https://hex.pm/packages/postgres_persistance)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/postgres_persistance/)
+[![Package Version](https://img.shields.io/hexpm/v/postgres_persistance)](https://hex.pm/packages/signal_postgres)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/signal_postgres/)
 
 ```sh
-gleam add postgres_persistance@1
+gleam add signal_postgres
 ```
+
 ```gleam
 import postgres_persistance
 
@@ -14,7 +15,7 @@ pub fn main() {
 }
 ```
 
-Further documentation can be found at <https://hexdocs.pm/postgres_persistance>.
+Further documentation can be found at <https://hexdocs.pm/signal_postgres>.
 
 ## Development
 

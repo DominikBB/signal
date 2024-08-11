@@ -351,7 +351,7 @@ pub fn without_debug_logging(
 /// Starts the signal services and returns a subject used to interact with the event store.
 /// 
 pub fn start(config: SignalConfig(aggregate, state, command, event)) {
-  use service <- result.try(emit_init(config))
+  use service <- result.try(signal_init(config))
 
   actor.start(Nil, emit_handler(service))
 }
@@ -431,15 +431,15 @@ pub fn get_current_pool_size(signal: Signal(aggregate, command, event)) -> Int {
 //                                    Signal                                      
 // -----------------------------------------------------------------------------
 
-type EmitService(aggregate, command, event) {
-  EmitService(
+type SignalService(aggregate, command, event) {
+  SignalService(
     pool: Pool(aggregate, command, event),
     bus: Bus(event),
     store: Store(event),
   )
 }
 
-fn emit_init(config: SignalConfig(aggregate, state, command, event)) {
+fn signal_init(config: SignalConfig(aggregate, state, command, event)) {
   use logger <- result.try(case config.custom_logger {
     Some(logger) -> Ok(logger)
     None -> actor.start(Nil, console_logger(config.log_info, config.log_debug))
@@ -460,10 +460,10 @@ fn emit_init(config: SignalConfig(aggregate, state, command, event)) {
     pool_handler(config.aggregate, bus, logger, store, config.pool_size),
   ))
 
-  Ok(EmitService(pool: pool, bus: bus, store: store))
+  Ok(SignalService(pool: pool, bus: bus, store: store))
 }
 
-fn emit_handler(cfg: EmitService(aggregate, command, event)) {
+fn emit_handler(cfg: SignalService(aggregate, command, event)) {
   fn(message: SignalMessage(aggregate, command, event), _state: Nil) {
     case message {
       GetPool(s) -> {
@@ -499,20 +499,6 @@ fn aggregate_init(
 
     actor.Ready(
       state: events
-        |> list.unique()
-        |> list.sort(fn(e1, e2) {
-          int.compare(e1.aggregate_version, e2.aggregate_version)
-        })
-        |> list.fold([], fn(dedup, event) {
-          case
-            list.any(dedup, fn(d: Event(event)) {
-              d.aggregate_version == event.aggregate_version
-            })
-          {
-            True -> dedup
-            False -> list.append(dedup, [event])
-          }
-        })
         |> list.fold(aggregate, fn(agg, e) {
           apply_event(e, cfg.event_handler, agg)
         }),

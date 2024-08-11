@@ -106,82 +106,83 @@ pub fn aggregate_pool_evicts_aggregates_from_memory_test() {
   |> should.equal(5)
 }
 
-pub fn aggregate_will_not_process_duplicate_events_test() {
-  let #(sut, _, _, store) = set_up_emit()
-  let event =
-    signal.Event(
-      aggregate_id: "1",
-      aggregate_version: 1,
-      event_name: "CreateRoute",
-      data: fixture.PackageAssigned(fixture.DeliveryPackage(
-        tracking_nr: "bla",
-        volume: #(0.0, 0.0, 0.0),
-        note: "bla",
-        status: fixture.Assigned,
-      )),
-    )
+// TODO Move into persistance layer tests
+// pub fn aggregate_will_not_process_duplicate_events_test() {
+//   let #(sut, _, _, store) = set_up_emit()
+//   let event =
+//     signal.Event(
+//       aggregate_id: "1",
+//       aggregate_version: 1,
+//       event_name: "CreateRoute",
+//       data: fixture.PackageAssigned(fixture.DeliveryPackage(
+//         tracking_nr: "bla",
+//         volume: #(0.0, 0.0, 0.0),
+//         note: "bla",
+//         status: fixture.Assigned,
+//       )),
+//     )
 
-  process.send(store, signal.StoreEvents([event, event]))
+//   process.send(store, signal.StoreEvents([event, event]))
 
-  let assert Ok(resulting_aggregate) =
-    signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
+//   let assert Ok(resulting_aggregate) =
+//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
 
-  resulting_aggregate.payload
-  |> list.length()
-  |> should.equal(1)
-}
+//   resulting_aggregate.payload
+//   |> list.length()
+//   |> should.equal(1)
+// }
 
-pub fn aggregate_will_not_process_events_of_same_aggregate_version_test() {
-  let #(sut, _, _, store) = set_up_emit()
-  let events = [
-    signal.Event(
-      aggregate_id: "1",
-      aggregate_version: 1,
-      event_name: "CreateRoute",
-      data: fixture.RouteCreated("1"),
-    ),
-    signal.Event(
-      aggregate_id: "1",
-      aggregate_version: 1,
-      event_name: "CreateRoute",
-      data: fixture.RouteCreated("2"),
-    ),
-  ]
+// pub fn aggregate_will_not_process_events_of_same_aggregate_version_test() {
+//   let #(sut, _, _, store) = set_up_emit()
+//   let events = [
+//     signal.Event(
+//       aggregate_id: "1",
+//       aggregate_version: 1,
+//       event_name: "CreateRoute",
+//       data: fixture.RouteCreated("1"),
+//     ),
+//     signal.Event(
+//       aggregate_id: "1",
+//       aggregate_version: 1,
+//       event_name: "CreateRoute",
+//       data: fixture.RouteCreated("2"),
+//     ),
+//   ]
 
-  process.send(store, signal.StoreEvents(events))
+//   process.send(store, signal.StoreEvents(events))
 
-  let assert Ok(resulting_aggregate) =
-    signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
+//   let assert Ok(resulting_aggregate) =
+//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
 
-  resulting_aggregate.id
-  |> should.equal("1")
-}
+//   resulting_aggregate.id
+//   |> should.equal("1")
+// }
 
-pub fn aggregate_will_process_events_based_on_aggregate_version_sort_order() {
-  let #(sut, _, _, store) = set_up_emit()
-  let events = [
-    signal.Event(
-      aggregate_id: "1",
-      aggregate_version: 2,
-      event_name: "CreateRoute",
-      data: fixture.RouteCreated("1"),
-    ),
-    signal.Event(
-      aggregate_id: "1",
-      aggregate_version: 1,
-      event_name: "CreateRoute",
-      data: fixture.RouteCreated("2"),
-    ),
-  ]
+// pub fn aggregate_will_process_events_based_on_aggregate_version_sort_order() {
+//   let #(sut, _, _, store) = set_up_emit()
+//   let events = [
+//     signal.Event(
+//       aggregate_id: "1",
+//       aggregate_version: 2,
+//       event_name: "CreateRoute",
+//       data: fixture.RouteCreated("1"),
+//     ),
+//     signal.Event(
+//       aggregate_id: "1",
+//       aggregate_version: 1,
+//       event_name: "CreateRoute",
+//       data: fixture.RouteCreated("2"),
+//     ),
+//   ]
 
-  process.send(store, signal.StoreEvents(events))
+//   process.send(store, signal.StoreEvents(events))
 
-  let assert Ok(resulting_aggregate) =
-    signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
+//   let assert Ok(resulting_aggregate) =
+//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
 
-  resulting_aggregate.id
-  |> should.equal("1")
-}
+//   resulting_aggregate.id
+//   |> should.equal("1")
+// }
 
 // -----------------------------------------------------------------------------
 //                                 Test setup                                   
