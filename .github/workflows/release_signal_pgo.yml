@@ -16,7 +16,7 @@ jobs:
                   gleam-version: '1.4.0'
 
             - run: cargo install tomlq
-            - run: cd "extensions/signal_pgo"
+            - run: cd extensions/signal_pgo
             - run: |
                   if [ "signal_pgo-v$(tomlq version -f gleam.toml)" == "${{ github.ref_name }}" ]; then
                     exit 0
