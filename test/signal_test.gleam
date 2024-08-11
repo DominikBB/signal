@@ -9,6 +9,7 @@ import gleam/set
 import gleeunit
 import gleeunit/should
 import signal
+import signal/testing
 import simulation
 
 pub fn main() {
@@ -106,83 +107,12 @@ pub fn aggregate_pool_evicts_aggregates_from_memory_test() {
   |> should.equal(5)
 }
 
-// TODO Move into persistance layer tests
-// pub fn aggregate_will_not_process_duplicate_events_test() {
-//   let #(sut, _, _, store) = set_up_emit()
-//   let event =
-//     signal.Event(
-//       aggregate_id: "1",
-//       aggregate_version: 1,
-//       event_name: "CreateRoute",
-//       data: fixture.PackageAssigned(fixture.DeliveryPackage(
-//         tracking_nr: "bla",
-//         volume: #(0.0, 0.0, 0.0),
-//         note: "bla",
-//         status: fixture.Assigned,
-//       )),
-//     )
-
-//   process.send(store, signal.StoreEvents([event, event]))
-
-//   let assert Ok(resulting_aggregate) =
-//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
-
-//   resulting_aggregate.payload
-//   |> list.length()
-//   |> should.equal(1)
-// }
-
-// pub fn aggregate_will_not_process_events_of_same_aggregate_version_test() {
-//   let #(sut, _, _, store) = set_up_emit()
-//   let events = [
-//     signal.Event(
-//       aggregate_id: "1",
-//       aggregate_version: 1,
-//       event_name: "CreateRoute",
-//       data: fixture.RouteCreated("1"),
-//     ),
-//     signal.Event(
-//       aggregate_id: "1",
-//       aggregate_version: 1,
-//       event_name: "CreateRoute",
-//       data: fixture.RouteCreated("2"),
-//     ),
-//   ]
-
-//   process.send(store, signal.StoreEvents(events))
-
-//   let assert Ok(resulting_aggregate) =
-//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
-
-//   resulting_aggregate.id
-//   |> should.equal("1")
-// }
-
-// pub fn aggregate_will_process_events_based_on_aggregate_version_sort_order() {
-//   let #(sut, _, _, store) = set_up_emit()
-//   let events = [
-//     signal.Event(
-//       aggregate_id: "1",
-//       aggregate_version: 2,
-//       event_name: "CreateRoute",
-//       data: fixture.RouteCreated("1"),
-//     ),
-//     signal.Event(
-//       aggregate_id: "1",
-//       aggregate_version: 1,
-//       event_name: "CreateRoute",
-//       data: fixture.RouteCreated("2"),
-//     ),
-//   ]
-
-//   process.send(store, signal.StoreEvents(events))
-
-//   let assert Ok(resulting_aggregate) =
-//     signal.aggregate(sut, "1") |> result.map(signal.get_state(_))
-
-//   resulting_aggregate.id
-//   |> should.equal("1")
-// }
+pub fn in_memory_persistance_layer_fullfils_signal_requirements_test() {
+  let assert Ok(persistance) =
+    actor.start([], signal.in_memory_persistance_handler)
+  result.all(testing.persistance_layer_complies_with_signal(persistance))
+  |> should.be_ok()
+}
 
 // -----------------------------------------------------------------------------
 //                                 Test setup                                   

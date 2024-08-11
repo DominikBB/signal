@@ -1014,7 +1014,9 @@ fn store_handler(
 //                         In memory persistance layer                          
 // -----------------------------------------------------------------------------
 
-fn in_memory_persistance_handler(
+/// Only public for testing purposes, you do not need to use this, it is a signal default.
+/// 
+pub fn in_memory_persistance_handler(
   message: PersistanceMessage(event),
   state: List(Event(event)),
 ) {
@@ -1031,7 +1033,7 @@ fn in_memory_persistance_handler(
       actor.continue(state)
     }
     IsIdentityAvailable(s, aggregate_id) -> {
-      case list.any(state, fn(e) { e.aggregate_id == aggregate_id }) {
+      case list.all(state, fn(e) { e.aggregate_id != aggregate_id }) {
         True -> process.send(s, Ok(True))
         False -> process.send(s, Ok(False))
       }
