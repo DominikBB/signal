@@ -19,6 +19,10 @@ The model is often referred to as an Aggregate, inspired by the Domain Driven De
 
 It can make your applications very easy to reason about and extend.
 
+```sh
+gleam add signal
+```
+
 ## Features
 
 -   A **declarative API** that does not intrude into your domain model
@@ -65,7 +69,7 @@ These are the features I see version 1 having:
 
 -   [x] Logging handler for customizing logging
 -   [x] Persistance layer test suite
--   [ ] Gleam PGO persistance layer
+-   [ ] Postgres persistance layer
 -   [ ] Aggregate replay to a specific version
 -   [ ] Genesis command handler for customizing creation of a new aggregate
 -   [ ] Closure event handler, to make deleting and evicting aggregates more customizable

@@ -1,4 +1,4 @@
-name = "signal_postgres"
+name = "signal_pgo"
 version = "1.0.0"
 
 # Fill out these fields if you intend to generate HTML documentation or publish
@@ -16,6 +16,10 @@ version = "1.0.0"
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 gleam_pgo = ">= 0.13.0 and < 1.0.0"
 decode = ">= 0.2.0 and < 1.0.0"
+signal = { path = "../../" }
+gleam_erlang = ">= 0.25.0 and < 1.0.0"
+gleam_otp = ">= 0.10.0 and < 1.0.0"
+gleam_json = ">= 1.0.1 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
