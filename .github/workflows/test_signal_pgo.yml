@@ -17,6 +17,5 @@ jobs:
                   rebar3-version: '3'
             - run: gleam format --check src test
             - run: gleam deps download
-            - run: sudo systemctl start postgresql.service
             - run: gleam test
             - run: gleam format --check src test
