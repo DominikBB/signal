@@ -24,7 +24,7 @@ jobs:
               run: sudo systemctl start postgresql.service
 
             - name: Create a database
-              run: sudo createdb -u postgres signal_dev
+              run: sudo createdb --username postgres signal_dev
 
             - name: Signal PGO tests
               run: gleam test
