@@ -2,7 +2,7 @@ name = "signal"
 version = "0.2.0"
 description = "A simple event sourcing library for gleam!"
 gleam = ">= 1.0.0"
-licences = ["Apache-2.0"]
+licenses = ["Apache-2.0"]
 target = "erlang"
 repository = { type = "github", user = "DominikBB", repo = "signal" }
 

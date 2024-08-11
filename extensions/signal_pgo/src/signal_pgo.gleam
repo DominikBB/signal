@@ -9,7 +9,7 @@ import signal
 pub fn start(
   pgo_config: pgo.Config,
   event_encoder: fn(event) -> String,
-  event_decoder: fn(String) -> event,
+  event_decoder: fn(String, String) -> event,
 ) {
   let db = pgo.connect(pgo_config)
   let assert Ok(_) = migrate(db)
@@ -28,6 +28,11 @@ fn migrate(db: pgo.Connection) {
         data TEXT
     );
 
+    "
+    |> pgo.execute(db, [], dynamic.dynamic)
+
+  let assert Ok(_) =
+    "
     CREATE INDEX IF NOT EXISTS idx_signal_events_aggregate_id ON signal_events (aggregate_id);
     "
     |> pgo.execute(db, [], dynamic.dynamic)
@@ -45,7 +50,7 @@ type PgoEvent {
 fn pgo_handler(
   db: pgo.Connection,
   event_encoder: fn(event) -> String,
-  event_decoder: fn(String) -> event,
+  event_decoder: fn(String, String) -> event,
 ) {
   fn(msg: signal.PersistanceMessage(event), _state: Nil) {
     case msg {
@@ -103,7 +108,7 @@ fn to_pgo_event(event: signal.Event(event), encode: fn(event) -> String) {
   )
 }
 
-fn decode_event(event: dynamic.Dynamic, decode: fn(String) -> event) {
+fn decode_event(event: dynamic.Dynamic, decode: fn(String, String) -> event) {
   case
     dynamic.from(event)
     |> dynamic.decode4(
@@ -119,7 +124,7 @@ fn decode_event(event: dynamic.Dynamic, decode: fn(String) -> event) {
         aggregate_id: event.aggregate_id,
         aggregate_version: event.aggregate_version,
         event_name: event.event_name,
-        data: decode(event.data),
+        data: decode(event.event_name, event.data),
       ))
     Error(_) -> Error("Could not decode event")
   }
@@ -127,7 +132,7 @@ fn decode_event(event: dynamic.Dynamic, decode: fn(String) -> event) {
 
 fn store_event(event: PgoEvent, db: pgo.Connection) {
   let assert Ok(_) =
-    "INSERT INTO signal_events (aggregate_id, aggregate_version, event_name, data) VALUES ($1, $2, $3, $4)"
+    "INSERT INTO signal_event_store (aggregate_id, aggregate_version, event_name, data) VALUES ($1, $2, $3, $4)"
     |> pgo.execute(
       db,
       [
@@ -142,7 +147,7 @@ fn store_event(event: PgoEvent, db: pgo.Connection) {
 
 fn get_stored_events(db: pgo.Connection, aggregate_id: String) {
   let assert Ok(rows) =
-    "SELECT aggregate_id, aggregate_version, event_name, data FROM signal_events WHERE aggregate_id = $1"
+    "SELECT aggregate_id, aggregate_version, event_name, data FROM signal_event_store WHERE aggregate_id = $1"
     |> pgo.execute(db, [pgo.text(aggregate_id)], dynamic.dynamic)
 
   rows
@@ -150,7 +155,7 @@ fn get_stored_events(db: pgo.Connection, aggregate_id: String) {
 
 fn is_identity_available(db: pgo.Connection, identity: String) {
   let assert Ok(rows) =
-    "SELECT aggregate_id FROM signal_events WHERE aggregate_id = $1"
+    "SELECT aggregate_id FROM signal_event_store WHERE aggregate_id = $1"
     |> pgo.execute(db, [pgo.text(identity)], dynamic.dynamic)
 
   rows
