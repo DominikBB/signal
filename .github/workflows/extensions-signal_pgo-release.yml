@@ -5,9 +5,10 @@ on:
         tags: ['signal_pgo-v*']
 
 jobs:
-    test:
+    test_signal_pgo:
         uses: dominikbb/signal/.github/workflows/extensions-signal_pgo-test.yml@master
     publish:
+        needs: test_signal_pgo
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3.1.0
