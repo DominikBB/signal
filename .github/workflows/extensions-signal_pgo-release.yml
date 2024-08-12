@@ -6,11 +6,11 @@ on:
 
 jobs:
     build:
+        uses: dominikbb/signal/.github/workflows/extensions-signal_pgo-test.yml@master
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3.1.0
             - uses: erlef/setup-beam@v1.16.0
-            - uses: dominikbb/signal/.github/workflows/extensions-signal_pgo-test.yml@master
               with:
                   otp-version: '26.0.2'
                   rebar3-version: '3'

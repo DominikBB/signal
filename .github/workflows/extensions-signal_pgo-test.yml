@@ -9,6 +9,8 @@ on:
 
 jobs:
     test:
+        uses: dominikbb/signal/.github/workflows/signal-test.yml@master
+        runs-on: ubuntu-latest
         services:
             postgres:
                 image: postgres:13
@@ -19,11 +21,9 @@ jobs:
                 ports:
                     - 5432:5500
                 options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-        runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
             - uses: erlef/setup-beam@v1
-            - uses: dominikbb/signal/.github/workflows/signal-test.yml@master
 
               with:
                   otp-version: '26.0.2'
