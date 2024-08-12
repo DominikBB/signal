@@ -944,26 +944,9 @@ fn store_handler(
     }
     case message {
       StoreEvent(e) -> {
-        case list.is_empty(processing) {
-          False -> {
-            log_telemetry(
-              logger,
-              StorePushedEventToWriteAheadLog(
-                e.event_name,
-                list.length([e, ..wal]),
-              ),
-            )
-            actor.continue(#([e, ..wal], processing))
-          }
-          True -> {
-            process.send(persistor, StoreEvents([e, ..wal]))
-            log_telemetry(
-              logger,
-              StoreSubmittedBatchForPersistance(list.length([e, ..wal])),
-            )
-            actor.continue(#([], list.append(wal, processing)))
-          }
-        }
+        log_telemetry(logger, StorePersistanceCompleted(1, 0))
+        actor.send(persistor, StoreEvents([e]))
+        actor.continue(#([], []))
       }
       GetEvents(s, id) -> {
         let events =
@@ -982,28 +965,7 @@ fn store_handler(
         actor.continue(state)
       }
       PersistanceState(processed) -> {
-        let #(_, not_yet_processed) =
-          list.partition(processing, fn(e) { list.contains(processed, e) })
-
-        log_telemetry(
-          logger,
-          StorePersistanceCompleted(
-            list.length(processed),
-            list.length(not_yet_processed),
-          ),
-        )
-
-        case list.is_empty(not_yet_processed) {
-          False -> actor.continue(#(wal, not_yet_processed))
-          True -> {
-            process.send(persistor, StoreEvents(wal))
-            log_telemetry(
-              logger,
-              StoreSubmittedBatchForPersistance(list.length(wal)),
-            )
-            actor.continue(#([], wal))
-          }
-        }
+        actor.continue(#([], []))
       }
       ShutdownStore -> actor.Stop(process.Normal)
     }
