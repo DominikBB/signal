@@ -8,8 +8,11 @@ on:
             - 'extensions/signal_pgo/**'
 
 jobs:
-    test:
+    signal_test:
         uses: dominikbb/signal/.github/workflows/signal-test.yml@master
+
+    singnal_pgo_test:
+        needs: signal_test
         runs-on: ubuntu-latest
         services:
             postgres:
