@@ -64,6 +64,7 @@ pub fn comlies_with_signal_requirements_test() {
       port: 5500,
       database: "signal_dev",
       user: "postgres",
+      password: option.Some("postgres"),
       pool_size: 2,
     )
 

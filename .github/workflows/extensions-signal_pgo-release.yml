@@ -1,8 +1,8 @@
-name: release signal
+name: Extensions - Signal PGO - Release
 
 on:
     push:
-        tags: ['v*']
+        tags: ['signal_pgo-v*']
 
 jobs:
     build:
@@ -10,21 +10,27 @@ jobs:
         steps:
             - uses: actions/checkout@v3.1.0
             - uses: erlef/setup-beam@v1.16.0
+            - uses: dominikbb/signal/.github/workflows/extensions-signal_pgo-test.yml@master
               with:
                   otp-version: '26.0.2'
                   rebar3-version: '3'
                   gleam-version: '1.4.0'
 
             - run: cargo install tomlq
-            - run: |
-                  if [ "v$(tomlq version -f gleam.toml)" == "${{ github.ref_name }}" ]; then
+
+            - name: Ensure correct version
+              run: |
+                  if [ "signal_pgo-v$(tomlq version -f gleam.toml)" == "${{ github.ref_name }}" ]; then
                     exit 0
                   fi
                   echo "tag does not match version in gleam.toml, refusing to publish"
+                  echo signal_pgo-v$(tomlq version -f gleam.toml)
                   exit 1
-            - run: gleam format
-            - run: gleam test
-            - run: gleam publish -y
+              working-directory: extensions/signal_pgo
+
+            - name: Publish
+              run: gleam publish -y
+              working-directory: extensions/signal_pgo
               env:
                   HEXPM_USER: ${{ secrets.HEX_USERNAME }}
                   HEXPM_PASS: ${{ secrets.HEX_PASSWORD }}

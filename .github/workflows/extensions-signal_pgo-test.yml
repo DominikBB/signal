@@ -1,0 +1,35 @@
+name: Extensions - Signal PGO - Test
+
+on:
+    push:
+        branches:
+            - master
+        paths:
+            - 'extensions/signal_pgo/**'
+
+jobs:
+    test:
+        services:
+            postgres:
+                image: postgres:13
+                env:
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                    POSTGRES_DB: signal_dev
+                ports:
+                    - 5432:5500
+                options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: erlef/setup-beam@v1
+            - uses: dominikbb/signal/.github/workflows/signal-test.yml@master
+
+              with:
+                  otp-version: '26.0.2'
+                  gleam-version: '1.4.0'
+                  rebar3-version: '3'
+            - run: gleam format --check src test
+            - run: gleam deps download
+            - run: gleam test
+            - run: gleam format --check src test

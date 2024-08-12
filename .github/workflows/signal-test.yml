@@ -1,9 +1,12 @@
-name: test signal
+name: Signal - Test
 
 on:
     push:
         branches:
             - master
+        paths-ignore:
+            - 'examples/**'
+            - 'extensions/**'
 
 jobs:
     test:
@@ -18,14 +21,3 @@ jobs:
             - run: gleam format --check src test
             - run: gleam deps download
             - run: gleam test
-            - run: gleam format --check src test
-
-            - name: Enable PostgreSQL
-              run: sudo systemctl start postgresql.service
-
-            - name: Create a database
-              run: sudo createdb --username postgres signal_dev
-
-            - name: Signal PGO tests
-              run: gleam test
-              working-directory: extensions/signal_pgo
