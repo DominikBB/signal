@@ -52,14 +52,13 @@ fn pgo_handler(
   event_encoder: fn(event) -> String,
   event_decoder: fn(String, String) -> event,
 ) {
-  fn(msg: signal.PersistanceMessage(event), _state: Nil) {
+  fn(msg: signal.StoreMessage(event), _state: Nil) {
     case msg {
-      signal.StoreEvents(events) -> {
-        list.map(events, fn(e) {
-          e
+      signal.StoreEvent(event) -> {
+        let _ =
+          event
           |> to_pgo_event(event_encoder)
           |> store_event(db)
-        })
         actor.continue(Nil)
       }
       signal.GetStoredEvents(s, aggregate_id) -> {

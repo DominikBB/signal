@@ -1,5 +1,5 @@
 name = "signal_pgo"
-version = "0.1.0"
+version = "0.1.1"
 description = "A postgres persistance layer for the Signal event sourcing library."
 gleam = ">= 1.0.0"
 
@@ -11,7 +11,7 @@ repository = { type = "github", user = "DominikBB", repo = "signal" }
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 gleam_pgo = ">= 0.13.0 and < 1.0.0"
 decode = ">= 0.2.0 and < 1.0.0"
-signal = ">= 0.2.0"
+signal = ">= 0.2.2"
 gleam_erlang = ">= 0.25.0 and < 1.0.0"
 gleam_otp = ">= 0.10.0 and < 1.0.0"
 gleam_json = ">= 1.0.1 and < 2.0.0"
