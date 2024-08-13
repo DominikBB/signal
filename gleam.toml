@@ -1,5 +1,5 @@
 name = "signal"
-version = "0.2.1"
+version = "0.2.2"
 description = "A simple event sourcing library for gleam!"
 gleam = ">= 1.0.0"
 licenses = ["Apache-2.0"]
