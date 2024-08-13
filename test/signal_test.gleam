@@ -208,7 +208,7 @@ fn process_commands(
 // -----------------------------------------------------------------------------
 
 fn test_persistance_handler(
-  message: signal.PersistanceMessage(event),
+  message: signal.StoreMessage(event),
   state: List(signal.Event(event)),
 ) {
   case message {
@@ -227,7 +227,8 @@ fn test_persistance_handler(
 
       actor.continue(state)
     }
-    signal.StoreEvents(events) -> actor.continue(list.append(state, events))
+    signal.StoreEvent(event) ->
+      actor.continue([event, ..list.reverse(state)] |> list.reverse())
     signal.ShutdownPersistanceLayer -> actor.Stop(process.Normal)
   }
 }

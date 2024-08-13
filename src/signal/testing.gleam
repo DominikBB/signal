@@ -49,12 +49,12 @@ const test_events = [
 ]
 
 fn persistance_layer_stores_events(
-  persistance_layer: process.Subject(
-    signal.PersistanceMessage(PersistanceTestEvent),
-  ),
+  persistance_layer: process.Subject(signal.StoreMessage(PersistanceTestEvent)),
 ) {
   // Store events
-  process.send(persistance_layer, signal.StoreEvents(test_events))
+  list.map(test_events, fn(event) {
+    process.send(persistance_layer, signal.StoreEvent(event))
+  })
 
   // Retrieve events
   use agg1 <- result.try(process.call(
@@ -90,12 +90,12 @@ fn persistance_layer_stores_events(
 }
 
 fn persistance_layer_retrieves_events_in_order(
-  persistance_layer: process.Subject(
-    signal.PersistanceMessage(PersistanceTestEvent),
-  ),
+  persistance_layer: process.Subject(signal.StoreMessage(PersistanceTestEvent)),
 ) {
   // Store events
-  process.send(persistance_layer, signal.StoreEvents(list.reverse(test_events)))
+  list.map(list.reverse(test_events), fn(event) {
+    process.send(persistance_layer, signal.StoreEvent(event))
+  })
 
   // Retrieve events
   use agg1 <- result.try(process.call(
@@ -116,12 +116,12 @@ fn persistance_layer_retrieves_events_in_order(
 }
 
 fn persistance_layer_retrieves_only_events_for_aggregate(
-  persistance_layer: process.Subject(
-    signal.PersistanceMessage(PersistanceTestEvent),
-  ),
+  persistance_layer: process.Subject(signal.StoreMessage(PersistanceTestEvent)),
 ) {
   // Store events
-  process.send(persistance_layer, signal.StoreEvents(list.reverse(test_events)))
+  list.map(test_events, fn(event) {
+    process.send(persistance_layer, signal.StoreEvent(event))
+  })
 
   // Retrieve events
   use agg1 <- result.try(process.call(
@@ -137,12 +137,12 @@ fn persistance_layer_retrieves_only_events_for_aggregate(
 }
 
 fn persistance_layer_will_correctly_report_on_used_ids(
-  persistance_layer: process.Subject(
-    signal.PersistanceMessage(PersistanceTestEvent),
-  ),
+  persistance_layer: process.Subject(signal.StoreMessage(PersistanceTestEvent)),
 ) {
   // Store events
-  process.send(persistance_layer, signal.StoreEvents(test_events))
+  list.map(test_events, fn(event) {
+    process.send(persistance_layer, signal.StoreEvent(event))
+  })
 
   // Retrieve events
   use used_ids <- result.try(process.call(
@@ -161,9 +161,7 @@ fn persistance_layer_will_correctly_report_on_used_ids(
 }
 
 pub fn persistance_layer_complies_with_signal(
-  persistance_layer: process.Subject(
-    signal.PersistanceMessage(PersistanceTestEvent),
-  ),
+  persistance_layer: process.Subject(signal.StoreMessage(PersistanceTestEvent)),
 ) {
   [
     persistance_layer_stores_events(persistance_layer),

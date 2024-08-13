@@ -9,8 +9,6 @@ import gleam/otp/task
 import gleam/result
 import gleam/string
 
-const warn_at_wal_size = 100
-
 const process_call_timeout = 100
 
 // -----------------------------------------------------------------------------
@@ -123,10 +121,10 @@ pub type EventHandler(state, event) =
 /// 
 /// > ⚠️ Persistance actor has to report the result of the StoreEvents message in form of a PersistanceState event. This allows signal to handle a write ahead log and batch event storage operations. 
 /// 
-pub type PersistanceMessage(event) {
+pub type StoreMessage(event) {
   GetStoredEvents(process.Subject(Result(List(Event(event)), String)), String)
   IsIdentityAvailable(process.Subject(Result(Bool, String)), String)
-  StoreEvents(List(Event(event)))
+  StoreEvent(Event(event))
   ShutdownPersistanceLayer
 }
 
@@ -164,7 +162,7 @@ pub type ConsumerMessage(state, event) {
 pub opaque type SignalConfig(aggregate, state, command, event) {
   SignalConfig(
     aggregate: AggregateConfig(aggregate, command, event),
-    persistance_handler: Option(process.Subject(PersistanceMessage(event))),
+    persistance_handler: Option(process.Subject(StoreMessage(event))),
     subscribers: List(Subscriber(state, event)),
     pool_size: Int,
     custom_logger: Option(process.Subject(TelemetryMessage)),
@@ -299,7 +297,7 @@ pub fn with_subscriber(
 /// 
 pub fn with_persistance_layer(
   config: SignalConfig(aggregate, state, command, event),
-  persist: process.Subject(PersistanceMessage(event)),
+  persist: process.Subject(StoreMessage(event)),
 ) -> SignalConfig(aggregate, state, command, event) {
   SignalConfig(..config, persistance_handler: Some(persist))
 }
@@ -435,7 +433,7 @@ type SignalService(aggregate, command, event) {
   SignalService(
     pool: Pool(aggregate, command, event),
     bus: Bus(event),
-    store: Store(event),
+    store: process.Subject(StoreMessage(event)),
   )
 }
 
@@ -445,12 +443,16 @@ fn signal_init(config: SignalConfig(aggregate, state, command, event)) {
     None -> actor.start(Nil, console_logger(config.log_info, config.log_debug))
   })
 
-  use store_handler <- result.try(result.replace_error(
-    set_up_store_handler(logger, config.persistance_handler),
-    actor.InitTimeout,
-  ))
+  let store = {
+    case config.persistance_handler {
+      Some(store) -> store
+      None -> {
+        let assert Ok(store) = actor.start([], in_memory_persistance_handler)
+        store
+      }
+    }
+  }
 
-  use store <- result.try(actor.start(#([], []), store_handler))
   use bus <- result.try(actor.start(
     Nil,
     bus_handler(logger, config.subscribers, store),
@@ -649,7 +651,7 @@ fn pool_handler(
   config: AggregateConfig(aggregate, command, event),
   bus: Bus(event),
   logger: process.Subject(TelemetryMessage),
-  store: Store(event),
+  store: process.Subject(StoreMessage(event)),
   max_size: Int,
 ) {
   fn(
@@ -754,8 +756,9 @@ fn evict_aggregates_workflow(
   }
 }
 
-fn store_has_aggregate(store: Store(event), key: String) {
-  let response = process.call(store, IdExists(_, key), process_call_timeout)
+fn store_has_aggregate(store: process.Subject(StoreMessage(event)), key: String) {
+  let response =
+    process.call(store, IsIdentityAvailable(_, key), process_call_timeout)
 
   case response {
     Error(_) | Ok(False) -> False
@@ -766,7 +769,7 @@ fn store_has_aggregate(store: Store(event), key: String) {
 fn gather_aggregate(
   aggregate_initializer: fn(List(Event(event))) ->
     Result(Aggregate(aggregate, command, event), String),
-  store: Store(event),
+  store: process.Subject(StoreMessage(event)),
   dict: Dict(String, #(Aggregate(aggregate, command, event), Int)),
   id: String,
   logger: process.Subject(TelemetryMessage),
@@ -781,12 +784,12 @@ fn gather_aggregate(
 fn gather_aggregate_from_store(
   aggregate_initializer: fn(List(Event(event))) ->
     Result(Aggregate(aggregate, command, event), String),
-  store: Store(event),
+  store: process.Subject(StoreMessage(event)),
   id: String,
   logger: process.Subject(TelemetryMessage),
 ) {
   log_telemetry(logger, PoolHydratingAggregate(id))
-  case process.call(store, GetEvents(_, id), process_call_timeout) {
+  case process.call(store, GetStoredEvents(_, id), process_call_timeout) {
     Error(msg) -> Error(msg)
     Ok(events) -> {
       log_telemetry(logger, PoolHydratedAggregate(id))
@@ -835,7 +838,7 @@ type BusMessage(event) {
 fn bus_handler(
   logger: process.Subject(TelemetryMessage),
   subscribers: List(Subscriber(state, event)),
-  store: Store(event),
+  store: process.Subject(StoreMessage(event)),
 ) {
   fn(message: BusMessage(event), _state: Nil) {
     case message {
@@ -881,95 +884,11 @@ fn notify_subscribers(
   )
 }
 
-fn notify_store(event: Event(event), store: Store(event)) {
+fn notify_store(
+  event: Event(event),
+  store: process.Subject(StoreMessage(event)),
+) {
   process.send(store, StoreEvent(event))
-}
-
-// -----------------------------------------------------------------------------
-//                                 Event Store                                  
-// -----------------------------------------------------------------------------
-
-/// An internal actor used to manage storage of events.
-/// 
-type Store(event) =
-  process.Subject(StoreMessage(event))
-
-/// Messages handled by the Store actor, when creating custom persistance layers, you should report persistance state to PersistanceState.
-/// 
-pub type StoreMessage(event) {
-  StoreEvent(event: Event(event))
-  GetEvents(
-    reply_with: process.Subject(Result(List(Event(event)), String)),
-    aggregate_id: String,
-  )
-  IdExists(
-    reply_with: process.Subject(Result(Bool, String)),
-    aggregate_id: String,
-  )
-  // Used by the persistance layer to confirm the event is stored
-  PersistanceState(ids: List(Event(event)))
-  ShutdownStore
-}
-
-fn set_up_store_handler(
-  logger: process.Subject(TelemetryMessage),
-  persistor: Option(process.Subject(PersistanceMessage(event))),
-) {
-  case persistor {
-    Some(p) -> Ok(store_handler(p, logger))
-    None -> {
-      case actor.start([], in_memory_persistance_handler) {
-        Ok(s) -> Ok(store_handler(s, logger))
-        _ -> Error("Failed to spin up the in memory persistance layer!")
-      }
-    }
-  }
-}
-
-/// Maintains a write ahead log to keep the system performant regardless of the persitance layer
-/// 
-fn store_handler(
-  persistor: process.Subject(PersistanceMessage(event)),
-  logger: process.Subject(TelemetryMessage),
-) {
-  fn(
-    message: StoreMessage(event),
-    state: #(List(Event(event)), List(Event(event))),
-  ) {
-    let #(wal, processing) = state
-    case list.length(wal) {
-      l if l > warn_at_wal_size ->
-        log_telemetry(logger, StoreWriteAheadLogSizeWarning(l))
-      _ -> Nil
-    }
-    case message {
-      StoreEvent(e) -> {
-        log_telemetry(logger, StorePersistanceCompleted(1, 0))
-        actor.send(persistor, StoreEvents([e]))
-        actor.continue(#([], []))
-      }
-      GetEvents(s, id) -> {
-        let events =
-          process.call(persistor, GetStoredEvents(_, id), process_call_timeout)
-        process.send(s, events)
-        actor.continue(state)
-      }
-      IdExists(s, id) -> {
-        let result =
-          process.call(
-            persistor,
-            IsIdentityAvailable(_, id),
-            process_call_timeout,
-          )
-        process.send(s, result)
-        actor.continue(state)
-      }
-      PersistanceState(processed) -> {
-        actor.continue(#([], []))
-      }
-      ShutdownStore -> actor.Stop(process.Normal)
-    }
-  }
 }
 
 // -----------------------------------------------------------------------------
@@ -979,7 +898,7 @@ fn store_handler(
 /// Only public for testing purposes, you do not need to use this, it is a signal default.
 /// 
 pub fn in_memory_persistance_handler(
-  message: PersistanceMessage(event),
+  message: StoreMessage(event),
   state: List(Event(event)),
 ) {
   case message {
@@ -1002,7 +921,8 @@ pub fn in_memory_persistance_handler(
 
       actor.continue(state)
     }
-    StoreEvents(events) -> actor.continue(list.append(state, events))
+    StoreEvent(event) ->
+      actor.continue([event, ..list.reverse(state)] |> list.reverse())
     ShutdownPersistanceLayer -> actor.Stop(process.Normal)
   }
 }
