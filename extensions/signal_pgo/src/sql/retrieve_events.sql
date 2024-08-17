@@ -1,1 +1,0 @@
-SELECT aggregate_id, aggregate_version, data FROM signal_events WHERE aggregate_id = $1 ORDER BY aggregate_version ASC;

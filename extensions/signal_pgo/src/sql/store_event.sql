@@ -1,1 +1,0 @@
-INSERT INTO signal_events (aggregate_id, aggregate_version, event_name, data) VALUES ($1, $2, $3, $4);
