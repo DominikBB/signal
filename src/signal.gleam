@@ -17,20 +17,6 @@ const process_call_timeout = 100
 
 // ----------------------------- Exported Types --------------------------------
 
-/// A base signal process which supervises the behind the scenes stuff and exposes some functionality.
-/// 
-///
-pub type Signal(aggregate, command, event) =
-  process.Subject(SignalMessage(aggregate, command, event))
-
-/// The base signal process, it handles the internal operation of signal for a given aggregate type.
-/// 
-///
-pub opaque type SignalMessage(aggregate, command, event) {
-  GetPool(reply_with: process.Subject(Pool(aggregate, command, event)))
-  Shutdown
-}
-
 /// Represents a base event type that is used throughout signal, in event handlers you are able to use this information if needs be.
 /// 
 ///
@@ -41,6 +27,36 @@ pub type Event(event) {
     event_name: String,
     data: event,
   )
+}
+
+/// Messages processed by the Signal context.
+pub opaque type ContextMessage(aggregate, command, event) {
+  GetLogger(
+    reply: process.Subject(Result(process.Subject(TelemetryMessage), String)),
+  )
+  SetLogger(process.Subject(TelemetryMessage))
+  GetStore(
+    reply: process.Subject(Result(process.Subject(StoreMessage(event)), String)),
+  )
+  SetStore(process.Subject(StoreMessage(event)))
+  GetBus(
+    reply: process.Subject(Result(process.Subject(BusMessage(event)), String)),
+  )
+  SetBus(process.Subject(BusMessage(event)))
+  GetAggregatePool(
+    reply: process.Subject(
+      Result(process.Subject(PoolMessage(aggregate, command, event)), String),
+    ),
+  )
+  SetAggregatePool(Pool(aggregate, command, event))
+  ShutdownSignal
+}
+
+/// A base signal process which supervises the behind the scenes stuff and exposes some functionality.
+/// 
+///
+pub opaque type Signal(aggregate, command, event) {
+  Signal(process.Subject(ContextMessage(aggregate, command, event)))
 }
 
 /// An aggregate is an actor managed by signal that holds the state, processes commands and events.
@@ -349,9 +365,7 @@ pub fn without_debug_logging(
 /// Starts the signal services and returns a subject used to interact with the event store.
 /// 
 pub fn start(config: SignalConfig(aggregate, state, command, event)) {
-  use service <- result.try(signal_init(config))
-
-  actor.start(Nil, emit_handler(service))
+  signal_init(config)
 }
 
 /// Use this function to retrieve a particular aggregate from the signal event store. This will return a subject which can then be used to interact with state of you aggregate, or process further commands.
@@ -368,10 +382,14 @@ pub fn start(config: SignalConfig(aggregate, state, command, event)) {
 /// |> signal.get_state()
 /// ```
 pub fn aggregate(
-  signal: Signal(aggregate, command, event),
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(signal, GetPool, process_call_timeout)
+  use pool <- result.try(process.call(
+    signal,
+    GetAggregatePool(_),
+    process_call_timeout,
+  ))
   process.call(pool, GetAggregate(_, id), process_call_timeout)
 }
 
@@ -380,10 +398,14 @@ pub fn aggregate(
 /// The ID needs to be unique, otherwise creation will fail.
 /// 
 pub fn create(
-  signal: Signal(aggregate, command, event),
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   id: String,
 ) -> Result(Aggregate(aggregate, command, event), String) {
-  let pool = process.call(signal, GetPool, process_call_timeout)
+  use pool <- result.try(process.call(
+    signal,
+    GetAggregatePool(_),
+    process_call_timeout,
+  ))
   process.call(pool, CreateAggregate(_, id), process_call_timeout)
 }
 
@@ -419,10 +441,15 @@ pub fn get_id(agg: Aggregate(aggregate, command, event)) -> String {
 
 /// Gets the current size of the aggregate pool in memory, mainly for testing.
 /// 
-pub fn get_current_pool_size(signal: Signal(aggregate, command, event)) -> Int {
-  let pool = process.call(signal, GetPool(_), process_call_timeout)
-
-  process.call(pool, PoolSize(_), process_call_timeout)
+pub fn get_current_pool_size(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
+) {
+  use pool <- result.try(process.call(
+    signal,
+    GetAggregatePool(_),
+    process_call_timeout,
+  ))
+  Ok(process.call(pool, PoolSize(_), process_call_timeout))
 }
 
 // -----------------------------------------------------------------------------
@@ -431,17 +458,54 @@ pub fn get_current_pool_size(signal: Signal(aggregate, command, event)) -> Int {
 
 type SignalService(aggregate, command, event) {
   SignalService(
-    pool: Pool(aggregate, command, event),
-    bus: Bus(event),
-    store: process.Subject(StoreMessage(event)),
+    logger: Option(process.Subject(TelemetryMessage)),
+    pool: Option(Pool(aggregate, command, event)),
+    bus: Option(Bus(event)),
+    store: Option(process.Subject(StoreMessage(event))),
   )
 }
 
+fn context_handler(
+  msg: ContextMessage(aggregate, command, event),
+  cfg: SignalService(aggregate, command, event),
+) {
+  case msg {
+    GetLogger(s) -> send_and_continue(s, cfg.logger, cfg)
+    GetStore(s) -> send_and_continue(s, cfg.store, cfg)
+    GetBus(s) -> send_and_continue(s, cfg.bus, cfg)
+    GetAggregatePool(s) -> send_and_continue(s, cfg.pool, cfg)
+    SetLogger(s) -> actor.continue(SignalService(..cfg, logger: Some(s)))
+    SetStore(s) -> actor.continue(SignalService(..cfg, store: Some(s)))
+    SetBus(s) -> actor.continue(SignalService(..cfg, bus: Some(s)))
+    SetAggregatePool(s) -> actor.continue(SignalService(..cfg, pool: Some(s)))
+    ShutdownSignal -> actor.Stop(process.Normal)
+  }
+}
+
+fn send_and_continue(
+  s: process.Subject(Result(x, String)),
+  msg: Option(x),
+  state: z,
+) {
+  case msg {
+    Some(m) -> process.send(s, Ok(m))
+    None -> process.send(s, Error("No logger set"))
+  }
+  actor.continue(state)
+}
+
 fn signal_init(config: SignalConfig(aggregate, state, command, event)) {
+  use signal <- result.try(actor.start(
+    SignalService(None, None, None, None),
+    context_handler,
+  ))
+
   use logger <- result.try(case config.custom_logger {
     Some(logger) -> Ok(logger)
     None -> actor.start(Nil, console_logger(config.log_info, config.log_debug))
   })
+
+  actor.send(signal, SetLogger(logger))
 
   let store = {
     case config.persistance_handler {
@@ -453,28 +517,23 @@ fn signal_init(config: SignalConfig(aggregate, state, command, event)) {
     }
   }
 
+  actor.send(signal, SetStore(store))
+
   use bus <- result.try(actor.start(
     Nil,
-    bus_handler(logger, config.subscribers, store),
+    bus_handler(signal, config.subscribers),
   ))
+
+  actor.send(signal, SetBus(bus))
+
   use pool <- result.try(actor.start(
     dict.new(),
-    pool_handler(config.aggregate, bus, logger, store, config.pool_size),
+    pool_handler(signal, config.aggregate, config.pool_size),
   ))
 
-  Ok(SignalService(pool: pool, bus: bus, store: store))
-}
+  actor.send(signal, SetAggregatePool(pool))
 
-fn emit_handler(cfg: SignalService(aggregate, command, event)) {
-  fn(message: SignalMessage(aggregate, command, event), _state: Nil) {
-    case message {
-      GetPool(s) -> {
-        process.send(s, cfg.pool)
-        actor.continue(Nil)
-      }
-      Shutdown -> actor.Stop(process.Normal)
-    }
-  }
+  Ok(signal)
 }
 
 // -----------------------------------------------------------------------------
@@ -510,11 +569,10 @@ fn aggregate_init(
 }
 
 fn aggregate_handler(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   id: String,
   command_handler: CommandHandler(aggregate, command, event),
   event_handler: EventHandler(aggregate, event),
-  bus: Bus(event),
-  logger: process.Subject(TelemetryMessage),
 ) {
   fn(
     operation: AggregateMessage(aggregate, command, event),
@@ -531,7 +589,7 @@ fn aggregate_handler(
       }
       HandleCommand(client, command) -> {
         log_telemetry(
-          logger,
+          signal,
           AggregateProcessingCommand(type_name(command), id),
         )
         case command_handler(command, agg.state) {
@@ -539,12 +597,12 @@ fn aggregate_handler(
             let new_state =
               list.fold(events, agg, fn(agg, e) {
                 update_aggregate(
-                  AggregateUpdateContext(id, bus, event_handler, agg),
+                  AggregateUpdateContext(signal, id, event_handler, agg),
                   e,
                 )
               })
             log_telemetry(
-              logger,
+              signal,
               AggregateProcessedCommand(type_name(command), id),
             )
             case events {
@@ -552,7 +610,7 @@ fn aggregate_handler(
               e ->
                 list.map(e, fn(ev) {
                   log_telemetry(
-                    logger,
+                    signal,
                     AggregateEventsProduced(type_name(ev), id),
                   )
                 })
@@ -562,7 +620,7 @@ fn aggregate_handler(
           }
           Error(msg) -> {
             log_telemetry(
-              logger,
+              signal,
               AggregateCommandProcessingFailed(type_name(command), id),
             )
             process.send(client, Error(msg))
@@ -577,8 +635,8 @@ fn aggregate_handler(
 
 type AggregateUpdateContext(aggregate, command, event) {
   AggregateUpdateContext(
+    signal: process.Subject(ContextMessage(aggregate, command, event)),
     id: String,
-    bus: Bus(event),
     event_handler: EventHandler(aggregate, event),
     aggregate: AggregateState(aggregate, command, event),
   )
@@ -619,7 +677,8 @@ fn send_event_to_bus(
   event: Event(event),
   ctx: AggregateUpdateContext(aggregate, command, event),
 ) {
-  process.send(ctx.bus, PushEvent(event))
+  let assert Ok(bus) = process.call(ctx.signal, GetBus(_), process_call_timeout)
+  process.send(bus, PushEvent(event))
   event
 }
 
@@ -648,10 +707,8 @@ type PoolMessage(aggregate, command, event) {
 }
 
 fn pool_handler(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   config: AggregateConfig(aggregate, command, event),
-  bus: Bus(event),
-  logger: process.Subject(TelemetryMessage),
-  store: process.Subject(StoreMessage(event)),
   max_size: Int,
 ) {
   fn(
@@ -660,19 +717,19 @@ fn pool_handler(
   ) {
     case operation {
       CreateAggregate(client, with_id) -> {
-        log_telemetry(logger, PoolCreatingAggregate(with_id))
-        let exists_in_store = store_has_aggregate(store, with_id)
+        log_telemetry(signal, PoolCreatingAggregate(with_id))
+        let exists_in_store = store_has_aggregate(signal, with_id)
         let exists_in_pool = dict.has_key(state, with_id)
 
         case exists_in_store, exists_in_pool {
           False, False -> {
-            case start_aggregate(config, bus, logger, with_id, []) {
+            case start_aggregate(signal, config, with_id, []) {
               Ok(agg) -> {
                 process.send(client, Ok(agg))
-                log_telemetry(logger, PoolCreatedAggregate(with_id))
+                log_telemetry(signal, PoolCreatedAggregate(with_id))
                 actor.continue(
                   dict.insert(
-                    evict_aggregates_workflow(max_size, state, logger),
+                    evict_aggregates_workflow(signal, max_size, state),
                     with_id,
                     #(agg, dict.size(state) + 1),
                   ),
@@ -685,7 +742,7 @@ fn pool_handler(
             }
           }
           _, _ -> {
-            log_telemetry(logger, PoolCannotCreateAggregateWithId(with_id))
+            log_telemetry(signal, PoolCannotCreateAggregateWithId(with_id))
             process.send(
               client,
               Error("Aggregate ID must be unique, " <> with_id <> " is not!"),
@@ -697,11 +754,10 @@ fn pool_handler(
       GetAggregate(client, id) -> {
         case
           gather_aggregate(
-            start_aggregate(config, bus, logger, id, _),
-            store,
+            signal,
+            start_aggregate(signal, config, id, _),
             state,
             id,
-            logger,
           )
         {
           Ok(aggregate) -> {
@@ -709,7 +765,7 @@ fn pool_handler(
             process.send(client, Ok(aggregate))
           }
           Error(msg) -> {
-            log_telemetry(logger, PoolAggregateNotFound(id))
+            log_telemetry(signal, PoolAggregateNotFound(id))
             process.send(client, Error(msg))
           }
         }
@@ -725,14 +781,14 @@ fn pool_handler(
 }
 
 fn evict_aggregates_workflow(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   max_size: Int,
   state: Dict(String, #(Aggregate(aggregate, command, event), Int)),
-  logger: process.Subject(TelemetryMessage),
 ) {
   // Happens before insertion of aggregate into pool, hence - 1
   case dict.size(state) >= max_size {
     True -> {
-      log_telemetry(logger, PoolRebalancingStarted(max_size))
+      log_telemetry(signal, PoolRebalancingStarted(max_size))
       let eviction_list =
         dict.to_list(state)
         |> list.filter(fn(agg) {
@@ -742,12 +798,12 @@ fn evict_aggregates_workflow(
         |> list.map(fn(agg) {
           let #(id, #(agg, _)) = agg
           process.send(agg, ShutdownAggregate)
-          log_telemetry(logger, PoolEvictedAggregate(id))
+          log_telemetry(signal, PoolEvictedAggregate(id))
           id
         })
 
       log_telemetry(
-        logger,
+        signal,
         PoolRebalancingCompleted(list.length(eviction_list)),
       )
       dict.drop(state, eviction_list)
@@ -756,52 +812,65 @@ fn evict_aggregates_workflow(
   }
 }
 
-fn store_has_aggregate(store: process.Subject(StoreMessage(event)), key: String) {
-  let response =
+fn store_has_aggregate(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
+  key: String,
+) {
+  let response = {
+    use store <- result.try(process.call(
+      signal,
+      GetStore(_),
+      process_call_timeout,
+    ))
     process.call(store, IsIdentityAvailable(_, key), process_call_timeout)
+  }
 
   case response {
-    Error(_) | Ok(False) -> False
-    Ok(True) -> True
+    Error(_) | Ok(False) -> True
+    Ok(True) -> False
   }
 }
 
 fn gather_aggregate(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   aggregate_initializer: fn(List(Event(event))) ->
     Result(Aggregate(aggregate, command, event), String),
-  store: process.Subject(StoreMessage(event)),
   dict: Dict(String, #(Aggregate(aggregate, command, event), Int)),
   id: String,
-  logger: process.Subject(TelemetryMessage),
 ) {
   case dict.get(dict, id) {
     Ok(#(value, _)) -> Ok(value)
-    Error(_) ->
-      gather_aggregate_from_store(aggregate_initializer, store, id, logger)
+    Error(_) -> gather_aggregate_from_store(signal, aggregate_initializer, id)
   }
 }
 
 fn gather_aggregate_from_store(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   aggregate_initializer: fn(List(Event(event))) ->
     Result(Aggregate(aggregate, command, event), String),
-  store: process.Subject(StoreMessage(event)),
   id: String,
-  logger: process.Subject(TelemetryMessage),
 ) {
-  log_telemetry(logger, PoolHydratingAggregate(id))
-  case process.call(store, GetStoredEvents(_, id), process_call_timeout) {
+  log_telemetry(signal, PoolHydratingAggregate(id))
+  let result = {
+    use store <- result.try(process.call(
+      signal,
+      GetStore(_),
+      process_call_timeout,
+    ))
+    process.call(store, GetStoredEvents(_, id), process_call_timeout)
+  }
+  case result {
     Error(msg) -> Error(msg)
     Ok(events) -> {
-      log_telemetry(logger, PoolHydratedAggregate(id))
+      log_telemetry(signal, PoolHydratedAggregate(id))
       aggregate_initializer(events)
     }
   }
 }
 
 fn start_aggregate(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   config: AggregateConfig(aggregate, command, event),
-  bus: Bus(event),
-  logger: process.Subject(TelemetryMessage),
   id: String,
   events: List(Event(event)),
 ) {
@@ -810,11 +879,10 @@ fn start_aggregate(
       aggregate_init(events, config),
       5,
       aggregate_handler(
+        signal,
         id,
         config.command_handler,
         config.event_handler,
-        bus,
-        logger,
       ),
     ))
   {
@@ -836,15 +904,14 @@ type BusMessage(event) {
 }
 
 fn bus_handler(
-  logger: process.Subject(TelemetryMessage),
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   subscribers: List(Subscriber(state, event)),
-  store: process.Subject(StoreMessage(event)),
 ) {
   fn(message: BusMessage(event), _state: Nil) {
     case message {
       PushEvent(event) -> {
-        notify_subscribers(event, subscribers, logger)
-        notify_store(event, store)
+        notify_subscribers(signal, event, subscribers)
+        notify_store(signal, event)
         actor.continue(Nil)
       }
       ShutdownBus -> actor.Stop(process.Normal)
@@ -853,12 +920,14 @@ fn bus_handler(
 }
 
 fn notify_subscribers(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   event: Event(event),
   consumers: List(Subscriber(state, event)),
-  logger: process.Subject(TelemetryMessage),
 ) {
+  let assert Ok(logger) =
+    process.call(signal, GetLogger(_), process_call_timeout)
   log_telemetry(
-    logger,
+    signal,
     BusTriggeringSubscribers(event.event_name, list.length(consumers)),
   )
   case consumers {
@@ -870,24 +939,25 @@ fn notify_subscribers(
     }
     [Consumer(s), ..rest] -> {
       process.send(s, Consume(event))
-      notify_subscribers(event, rest, logger)
+      notify_subscribers(signal, event, rest)
     }
     [Policy(t), ..rest] -> {
       let _ = task.try_await(t, 5)
-      notify_subscribers(event, rest, logger)
+      notify_subscribers(signal, event, rest)
     }
   }
 
   log_telemetry(
-    logger,
+    signal,
     BusSubscribersInformed(event.event_name, list.length(consumers)),
   )
 }
 
 fn notify_store(
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   event: Event(event),
-  store: process.Subject(StoreMessage(event)),
 ) {
+  let assert Ok(store) = process.call(signal, GetStore(_), process_call_timeout)
   process.send(store, StoreEvent(event))
 }
 
@@ -989,40 +1059,45 @@ pub fn telemetry_log_level(ev: TelemetryEvent) {
 }
 
 fn log_telemetry(
-  logger: process.Subject(TelemetryMessage),
+  signal: process.Subject(ContextMessage(aggregate, command, event)),
   event: TelemetryEvent,
 ) {
-  process.send(
-    logger,
-    Report(event, case event {
-      PoolCreatingAggregate(_) -> "Creating aggregate |"
-      PoolCreatedAggregate(_) -> "Pool created aggregate |"
-      PoolCannotCreateAggregateWithId(_) ->
-        "Cannot create aggregate |, that id is already taken!"
-      PoolHydratingAggregate(_) -> "Hydrating aggregate |"
-      PoolHydratedAggregate(_) -> "Hydrated aggregate |"
-      PoolAggregateNotFound(_) -> "Aggregate | not found"
-      PoolRebalancingStarted(_) -> "Rebalancing pool to, from size |"
-      PoolEvictedAggregate(_) -> "Evicted aggregate |"
-      PoolRebalancingCompleted(_) -> "Rebalancing completed, new size |"
-      AggregateProcessingCommand(_, _) ->
-        "Processing command | with aggregate |"
-      AggregateProcessedCommand(_, _) -> "Command | processed by aggregate |"
-      AggregateCommandProcessingFailed(_, _) ->
-        "Command | processing failed by aggregate |"
-      AggregateEventsProduced(_, _) -> "Events | produced by aggregate: |"
-      BusTriggeringSubscribers(_, _) -> "Sending event | to | subscribers"
-      BusSubscribersInformed(_, _) -> "Sent event | to | subscribers"
-      StorePushedEventToWriteAheadLog(_, _) ->
-        "Pushed event | to write ahead log, wal size |"
-      StoreWriteAheadLogSizeWarning(_) ->
-        "Wal is overflowing! | events are waiting to be persisted!"
-      StoreSubmittedBatchForPersistance(_) ->
-        "Submitted | events for persistance"
-      StorePersistanceCompleted(_, _) ->
-        "Persisted | events, | events have not yet been reported persisted."
-    }),
-  )
+  case process.call(signal, GetLogger(_), process_call_timeout) {
+    Ok(logger) ->
+      process.send(
+        logger,
+        Report(event, case event {
+          PoolCreatingAggregate(_) -> "Creating aggregate |"
+          PoolCreatedAggregate(_) -> "Pool created aggregate |"
+          PoolCannotCreateAggregateWithId(_) ->
+            "Cannot create aggregate |, that id is already taken!"
+          PoolHydratingAggregate(_) -> "Hydrating aggregate |"
+          PoolHydratedAggregate(_) -> "Hydrated aggregate |"
+          PoolAggregateNotFound(_) -> "Aggregate | not found"
+          PoolRebalancingStarted(_) -> "Rebalancing pool to, from size |"
+          PoolEvictedAggregate(_) -> "Evicted aggregate |"
+          PoolRebalancingCompleted(_) -> "Rebalancing completed, new size |"
+          AggregateProcessingCommand(_, _) ->
+            "Processing command | with aggregate |"
+          AggregateProcessedCommand(_, _) ->
+            "Command | processed by aggregate |"
+          AggregateCommandProcessingFailed(_, _) ->
+            "Command | processing failed by aggregate |"
+          AggregateEventsProduced(_, _) -> "Events | produced by aggregate: |"
+          BusTriggeringSubscribers(_, _) -> "Sending event | to | subscribers"
+          BusSubscribersInformed(_, _) -> "Sent event | to | subscribers"
+          StorePushedEventToWriteAheadLog(_, _) ->
+            "Pushed event | to write ahead log, wal size |"
+          StoreWriteAheadLogSizeWarning(_) ->
+            "Wal is overflowing! | events are waiting to be persisted!"
+          StoreSubmittedBatchForPersistance(_) ->
+            "Submitted | events for persistance"
+          StorePersistanceCompleted(_, _) ->
+            "Persisted | events, | events have not yet been reported persisted."
+        }),
+      )
+    _ -> Nil
+  }
 }
 
 // -----------------------------------------------------------------------------

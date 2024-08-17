@@ -1,6 +1,5 @@
 import fixture
 import gleam/erlang/process
-import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
@@ -8,7 +7,7 @@ import gleam/result
 import gleam/set
 import gleeunit
 import gleeunit/should
-import signal
+import signal.{type ContextMessage}
 import signal/testing
 import simulation
 
@@ -72,6 +71,8 @@ pub fn aggregate_processes_commands_and_emits_events_test() {
   let assert Ok(_) = create_aggregates(sut, sim)
   let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
 
+  process.sleep(50)
+
   list.map(sim.list_of_aggregates, fn(agg) {
     let assert Ok(events) =
       process.call(store, signal.GetStoredEvents(_, agg.id), 50)
@@ -104,6 +105,7 @@ pub fn aggregate_pool_evicts_aggregates_from_memory_test() {
   list.length(sim.list_of_aggregates) |> should.equal(10)
 
   signal.get_current_pool_size(sut)
+  |> should.be_ok()
   |> should.equal(5)
 }
 
@@ -147,10 +149,12 @@ fn set_up_emit() {
 }
 
 fn create_aggregates(
-  sut: signal.Signal(
-    fixture.DeliveryRoute,
-    fixture.DeliveryCommand,
-    fixture.DeliveryEvent,
+  sut: process.Subject(
+    ContextMessage(
+      fixture.DeliveryRoute,
+      fixture.DeliveryCommand,
+      fixture.DeliveryEvent,
+    ),
   ),
   sim: simulation.Simulation(fixture.DeliveryCommand, fixture.DeliveryEvent),
 ) {
@@ -160,10 +164,12 @@ fn create_aggregates(
 }
 
 fn handle_simulation_commands(
-  sut: signal.Signal(
-    fixture.DeliveryRoute,
-    fixture.DeliveryCommand,
-    fixture.DeliveryEvent,
+  sut: process.Subject(
+    ContextMessage(
+      fixture.DeliveryRoute,
+      fixture.DeliveryCommand,
+      fixture.DeliveryEvent,
+    ),
   ),
   sim: simulation.Simulation(fixture.DeliveryCommand, fixture.DeliveryEvent),
   limit: option.Option(Int),
@@ -221,8 +227,8 @@ fn test_persistance_handler(
     }
     signal.IsIdentityAvailable(s, aggregate_id) -> {
       case list.any(state, fn(e) { e.aggregate_id == aggregate_id }) {
-        True -> process.send(s, Ok(True))
-        False -> process.send(s, Ok(False))
+        True -> process.send(s, Ok(False))
+        False -> process.send(s, Ok(True))
       }
 
       actor.continue(state)

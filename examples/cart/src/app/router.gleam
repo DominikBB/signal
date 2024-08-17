@@ -14,7 +14,7 @@ import wisp.{type Request, type Response}
 /// reference to signal
 /// 
 pub fn handle_request(
-  signal: signal.Signal(Cart, CartCommand, CartEvent),
+  signal: process.Subject(signal.ContextMessage(Cart, CartCommand, CartEvent)),
   revenue_projection: process.Subject(
     signal.ConsumerMessage(domain.Price, domain.CartEvent),
   ),
@@ -35,7 +35,7 @@ pub fn handle_request(
 
 pub fn pay_for_cart(
   id: String,
-  signal: signal.Signal(Cart, CartCommand, CartEvent),
+  signal: process.Subject(signal.ContextMessage(Cart, CartCommand, CartEvent)),
   revenue_projection: process.Subject(
     signal.ConsumerMessage(domain.Price, domain.CartEvent),
   ),
@@ -62,7 +62,7 @@ pub fn pay_for_cart(
 pub fn remove_from_cart(
   id: String,
   sku: String,
-  signal: signal.Signal(Cart, CartCommand, CartEvent),
+  signal: process.Subject(signal.ContextMessage(Cart, CartCommand, CartEvent)),
 ) -> Response {
   let result = {
     // Get the cart and handle the command
@@ -79,7 +79,7 @@ pub fn remove_from_cart(
 pub fn add_to_cart(
   id: String,
   req: Request,
-  signal: signal.Signal(Cart, CartCommand, CartEvent),
+  signal: process.Subject(signal.ContextMessage(Cart, CartCommand, CartEvent)),
 ) -> Response {
   use formdata <- wisp.require_form(req)
 

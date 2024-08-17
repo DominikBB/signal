@@ -6,6 +6,8 @@ licenses = ["Apache-2.0"]
 target = "erlang"
 repository = { type = "github", user = "DominikBB", repo = "signal" }
 
+internal_modules = ["signal/bus"]
+
 [dependencies]
 gleam_stdlib = ">= 0.39.0 and < 1.0.0"
 gleam_erlang = ">= 0.25.0 and < 2.0.0"
