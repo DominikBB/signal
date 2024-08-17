@@ -61,18 +61,9 @@ let state = signal.get_state(aggregate)
 
 ## Learning Signal
 
-[Cart example](https://github.com/dominikbb/signal/tree/master/examples/cart) creates a web app using Signal, Wisp and HTMX.
+-   [Cart example](https://github.com/dominikbb/signal/tree/master/examples/cart) creates a web app using Signal, Wisp and HTMX.
+-   [How signal works](https://github.com/DominikBB/signal/blob/master/pages/how-signal-works.md) goes into a bit more detail on how Signal runs behind the scenes
 
-## Road to v1
+## Signal extensions
 
-These are the features I see version 1 having:
-
--   [x] Logging handler for customizing logging
--   [x] Persistance layer test suite
--   [x] Postgres persistance layer
--   [ ] Implement a write ahead log for batching event storage
--   [ ] Aggregate replay to a specific version
--   [ ] Genesis command handler for customizing creation of a new aggregate
--   [ ] Closure event handler, to make deleting and evicting aggregates more customizable
--   [ ] Aggregate pool management based on activity instead of a queue
--   [ ] Test and develop policy subscribers further
+-   [Signal PGO](https://hexdocs.pm/signal_pgo/) is a persistance layer that uses Gleam PGO to store your events in postgres.
