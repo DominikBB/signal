@@ -910,8 +910,8 @@ fn bus_handler(
   fn(message: BusMessage(event), _state: Nil) {
     case message {
       PushEvent(event) -> {
-        notify_subscribers(signal, event, subscribers)
         notify_store(signal, event)
+        notify_subscribers(signal, event, subscribers)
         actor.continue(Nil)
       }
       ShutdownBus -> actor.Stop(process.Normal)
@@ -924,8 +924,6 @@ fn notify_subscribers(
   event: Event(event),
   consumers: List(Subscriber(state, event)),
 ) {
-  let assert Ok(logger) =
-    process.call(signal, GetLogger(_), process_call_timeout)
   log_telemetry(
     signal,
     BusTriggeringSubscribers(event.event_name, list.length(consumers)),
