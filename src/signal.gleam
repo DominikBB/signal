@@ -146,19 +146,13 @@ pub type StoreMessage(event) {
 
 /// Subscribers are triggered on **all** events produced by all aggregates, and serve as a great way to extend your system.
 /// 
-/// Subscribers cannot modify or produce events.
+/// > Subscribers cannot modify or produce events.
 /// 
 /// These are generally great for creating different read models of your data, reporting, and reacting to certain events. 
-/// 
 ///  
-/// - Consumer: is an actor that consumes events, and can do whatever it wants with them, and give the user full control of the state, lifecycle and everything elese.
-/// - Policy: is a one-of task that should run on an event, at the moment there is no retries and signal will ignore the return values of these tasks.
-/// 
-/// > 🛑 Policies are early in development, not well tested and might result in performance bottlenecks.
 /// 
 pub type Subscriber(state, event) {
   Consumer(process.Subject(ConsumerMessage(state, event)))
-  Policy(task.Task(Event(event)))
 }
 
 /// Consumers are actors that should receive and handle these messages.
@@ -928,19 +922,12 @@ fn notify_subscribers(
     signal,
     BusTriggeringSubscribers(event.event_name, list.length(consumers)),
   )
+
   case consumers {
     [] -> Nil
     [Consumer(s)] -> process.send(s, Consume(event))
-    [Policy(t)] -> {
-      let _ = task.try_await(t, 5)
-      Nil
-    }
     [Consumer(s), ..rest] -> {
       process.send(s, Consume(event))
-      notify_subscribers(signal, event, rest)
-    }
-    [Policy(t), ..rest] -> {
-      let _ = task.try_await(t, 5)
       notify_subscribers(signal, event, rest)
     }
   }
