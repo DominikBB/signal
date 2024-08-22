@@ -28,7 +28,7 @@ gleam add signal
 -   A **declarative API** that does not intrude into your domain model
 -   **Effortless extensibility** allowing for custom projections, metrics and any other kind of compute to be triggered on event generation
 -   High degree of **scalability** harnessing the power of OTP
--   An architecture **decoupled from the database writes** enables blazing fast experiences without complex database scaling and replication
+-   An architecture **de-coupled from the database operations** enables blazing fast experiences without complex scaling considerations
 
 ## Example
 
