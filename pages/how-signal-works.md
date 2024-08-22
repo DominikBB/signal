@@ -67,6 +67,4 @@ The subscribers are informed of each event produced by the system as a result of
 
 ## Scaling considerations
 
-Due to the fact that no command handling or state changes are coupled to database writes, you can scale your app and deploy it close to the user while keeping a single database and not worrying too much about it. **However**, Signal does not use a robust clustered process manager so if you deploy it on a cluster right now, it might run into inconsistent states, this could happen by having a single aggregate be started in separate application instances. That being said, if your aggregates are designed well, and the users are always routed to the same instance of the application, then the chance of this condition is fairly low.
-
-Implementing a process manager that ensures only unique aggregates in the aggregate pool across a cluster is definitely something I would like to explore, but is also quite hard without Gleam supporting named processes.
+Due to the fact that no command handling and state changes are de-coupled from the database operations, you can scale your app and deploy it close to the user. **However**, Signal does not use a robust clustered process manager (yet) so if you deploy it on a cluster right now, it might run into inconsistent states, this could happen by having a single aggregate be started in separate application instances. That being said, if your aggregates are designed well, and the users are always routed to the same instance of the application, then the chance of this condition is fairly low.
