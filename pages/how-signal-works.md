@@ -20,7 +20,34 @@ A signal service is composed of 3 core elements:
 
 The subscribers include the storage handler which persists events in a database. The subscribers can vary and do all kinds of things, more docs on that are coming.
 
-![alt text](how_signal_works.png)
+```
+                 Handles command
+                       |
+ Aggregates            |
+ +---------------------|-------+
+ | +--+ +--+ +--+      |  +--+ |
+ | |  | |  | |  |      +->|  | |
+ | +--+ +--+ +--+         +--+ |
+ +-----------------------------+
+   ^         Produces events |
+   |                         v
+ +-------------+ +-------------+
+ | Pool        | | Bus         |
+ +-------------+ +-------------+
+   ^               |         |
+   |               |         |
+ +-------------+   |         |
+ | Store       |<--+         |
+ +-------------+             |
+                             |
+             React to events v
+ +-----------------------------+
+ | +--+ +--+ +--+ +--+         |
+ | |  | |  | |  | |  |         |
+ | +--+ +--+ +--+ +--+         |
+ +-----------------------------+
+ Consumers
+```
 
 ---
 
@@ -35,3 +62,11 @@ What this means in practice is that when you process a command, and it returns O
 ## Delivery guarantees
 
 The subscribers are informed of each event produced by the system as a result of processing a new command, they are not informed of events used by the Pool to hydrate an aggregate from the storage medium. As a rule of thumb this means that the Bus will inform the subscribers **exactly-once** for each event, however this is subject to standard Erlang BEAM VM message passing limitations.
+
+---
+
+## Scaling considerations
+
+Due to the fact that no command handling or state changes are coupled to database writes, you can scale your app and deploy it close to the user while keeping a single database and not worrying too much about it. **However**, Signal does not use a robust clustered process manager so if you deploy it on a cluster right now, it might run into inconsistent states, this could happen by having a single aggregate be started in separate application instances. That being said, if your aggregates are designed well, and the users are always routed to the same instance of the application, then the chance of this condition is fairly low.
+
+Implementing a process manager that ensures only unique aggregates in the aggregate pool across a cluster is definitely something I would like to explore, but is also quite hard without Gleam supporting named processes.
