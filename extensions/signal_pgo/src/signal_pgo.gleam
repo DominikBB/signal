@@ -14,7 +14,15 @@ pub fn start(
   let db = pgo.connect(pgo_config)
   let assert Ok(_) = migrate(db)
 
-  actor.start(Nil, pgo_handler(db, event_encoder, event_decoder))
+  let started = #(
+    actor.start(Nil, pgo_handler(db, event_encoder, event_decoder)),
+    actor.start(Nil, projection_handler(db)),
+  )
+
+  case started {
+    #(Ok(a), Ok(p)) -> Ok(#(a, p))
+    _ -> Error("Could not start Signal PGO")
+  }
 }
 
 fn migrate(db: pgo.Connection) {
@@ -33,9 +41,45 @@ fn migrate(db: pgo.Connection) {
 
   let assert Ok(_) =
     "
-    CREATE INDEX IF NOT EXISTS idx_signal_events_aggregate_id ON signal_events (aggregate_id);
+    CREATE INDEX IF NOT EXISTS idx_signal_events_aggregate_id ON signal_event_store (aggregate_id);
     "
     |> pgo.execute(db, [], dynamic.dynamic)
+
+  let assert Ok(_) =
+    "
+    CREATE TABLE IF NOT EXISTS signal_document_store (
+        id SERIAL PRIMARY KEY,
+        projection_id VARCHAR(255),
+        projection_name VARCHAR(255),
+        projection_version INT
+        data TEXT
+    );
+
+    "
+    |> pgo.execute(db, [], dynamic.dynamic)
+
+  let assert Ok(_) =
+    "
+    CREATE INDEX IF NOT EXISTS idx_signal_projection_id ON signal_projection_store (projection_id);
+    "
+    |> pgo.execute(db, [], dynamic.dynamic)
+}
+
+// TODO Projection stuff is likely to move to Signal core at some point when signal starts supporting projections natively
+pub type Projection {
+  Projection(
+    projection_id: String,
+    projection_name: String,
+    projection_version: Int,
+    data: String,
+  )
+}
+
+pub type ProjectionMessage {
+  Store(Projection)
+  Get(reply_with: process.Subject(Result(Projection, String)), String)
+  Delete(String)
+  Shutdown
 }
 
 type PgoEvent {
@@ -158,4 +202,66 @@ fn is_identity_available(db: pgo.Connection, identity: String) {
     |> pgo.execute(db, [pgo.text(identity)], dynamic.dynamic)
 
   rows
+}
+
+fn projection_handler(db: pgo.Connection) {
+  fn(message: ProjectionMessage, _state: Nil) {
+    case message {
+      Store(proj) -> {
+        let assert Ok(_) =
+          "INSERT INTO signal_projection_store (projection_id, projection_name, projection_version, data) VALUES ($1, $2, $3, $4)"
+          |> pgo.execute(
+            db,
+            [
+              pgo.text(proj.projection_id),
+              pgo.text(proj.projection_name),
+              pgo.int(proj.projection_version),
+              pgo.text(proj.data),
+            ],
+            dynamic.dynamic,
+          )
+        actor.continue(Nil)
+      }
+      Get(s, id) -> {
+        let assert Ok(rows) =
+          "SELECT projection_id, projection_name, projection_version, data FROM signal_projection_store WHERE projection_id = $1"
+          |> pgo.execute(db, [pgo.text(id)], dynamic.dynamic)
+
+        case rows {
+          pgo.Returned(_, [row]) -> {
+            case
+              dynamic.from(row)
+              |> dynamic.decode4(
+                Projection,
+                dynamic.element(0, dynamic.string),
+                dynamic.element(0, dynamic.string),
+                dynamic.element(1, dynamic.int),
+                dynamic.element(2, dynamic.string),
+              )
+            {
+              Ok(proj) -> {
+                process.send(s, Ok(proj))
+                actor.continue(Nil)
+              }
+              Error(_) -> {
+                process.send(s, Error("Could not decode projection"))
+                actor.continue(Nil)
+              }
+            }
+          }
+          _ -> {
+            process.send(s, Error("Could not find projection"))
+            actor.continue(Nil)
+          }
+        }
+      }
+      Delete(id) -> {
+        let assert Ok(_) =
+          "DELETE FROM signal_projection_store WHERE projection_id = $1"
+          |> pgo.execute(db, [pgo.text(id)], dynamic.dynamic)
+        actor.continue(Nil)
+      }
+      Shutdown -> actor.Stop(process.Normal)
+    }
+  }
 }

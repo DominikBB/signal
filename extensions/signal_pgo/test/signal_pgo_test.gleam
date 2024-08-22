@@ -70,7 +70,7 @@ pub fn comlies_with_signal_requirements_test() {
 
   cleanup_db(pgo_config)
 
-  let assert Ok(persistance) =
+  let assert Ok(#(persistance, _)) =
     signal_pgo.start(pgo_config, test_event_encoder, test_event_decoder)
 
   result.all(testing.persistance_layer_complies_with_signal(persistance))
