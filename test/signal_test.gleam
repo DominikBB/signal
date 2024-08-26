@@ -116,6 +116,25 @@ pub fn in_memory_persistance_layer_fullfils_signal_requirements_test() {
   |> should.be_ok()
 }
 
+pub fn events_generated_contain_correct_metadata_test() {
+  let sim = simulation.new(simulation.ThreeAggregates, simulation.TestCommands)
+  let #(sut, _, _, store) = set_up_emit()
+  let assert Ok(_) = create_aggregates(sut, sim)
+  let assert Ok(_) = handle_simulation_commands(sut, sim, option.Some(1))
+
+  process.sleep(50)
+
+  let assert Ok(agg) = list.first(sim.list_of_aggregates)
+
+  let assert Ok(events) =
+    process.call(store, signal.GetStoredEvents(_, agg.id), 50)
+
+  let assert Ok(event) = list.first(events)
+
+  event.aggregate_name |> should.equal("InProgressRoute")
+  event.event_name |> should.equal("RouteCreated")
+}
+
 // -----------------------------------------------------------------------------
 //                                 Test setup                                   
 // -----------------------------------------------------------------------------

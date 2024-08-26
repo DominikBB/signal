@@ -1,3 +1,4 @@
+import birl
 import gleam/dict.{type Dict}
 import gleam/erlang/process
 import gleam/int
@@ -23,8 +24,10 @@ const process_call_timeout = 100
 pub type Event(event) {
   Event(
     aggregate_version: Int,
+    aggregate_name: String,
     aggregate_id: String,
     event_name: String,
+    timestamp: String,
     data: event,
   )
 }
@@ -650,10 +653,14 @@ fn hydrate_event(
   event: event,
   ctx: AggregateUpdateContext(aggregate, command, event),
 ) {
+  let current_date = birl.utc_now() |> birl.to_iso8601()
+
   Event(
     aggregate_version: ctx.aggregate.version + 1,
     aggregate_id: ctx.id,
     event_name: type_name(event),
+    aggregate_name: type_name(ctx.aggregate.state),
+    timestamp: current_date,
     data: event,
   )
 }
