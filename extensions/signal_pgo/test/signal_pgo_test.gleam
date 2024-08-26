@@ -34,10 +34,8 @@ fn test_event_decoder(event_name: String, event: String) {
           dynamic.field("some", dynamic.string),
         )
 
-      case json.decode(event, decoder) {
-        Ok(event) -> event
-        Error(_) -> panic as "error"
-      }
+      json.decode(event, decoder)
+      |> result.replace_error("Failed to decode user event")
     }
     "ComplexEvent" -> {
       let decoder =
@@ -47,10 +45,8 @@ fn test_event_decoder(event_name: String, event: String) {
           dynamic.field("list", dynamic.list(dynamic.int)),
         )
 
-      case json.decode(event, decoder) {
-        Ok(event) -> event
-        Error(_) -> panic as "error"
-      }
+      json.decode(event, decoder)
+      |> result.replace_error("Failed to decode user event")
     }
     _ -> panic as "Unknown event"
   }

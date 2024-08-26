@@ -9,7 +9,7 @@ import signal
 pub fn start(
   pgo_config: pgo.Config,
   event_encoder: fn(event) -> String,
-  event_decoder: fn(String, String) -> event,
+  event_decoder: fn(String, String) -> Result(event, String),
 ) {
   let db = pgo.connect(pgo_config)
   let assert Ok(_) = migrate(db)
@@ -27,42 +27,32 @@ pub fn start(
 
 fn migrate(db: pgo.Connection) {
   let assert Ok(_) =
-    "
-    CREATE TABLE IF NOT EXISTS signal_event_store (
-        id SERIAL PRIMARY KEY,
-        aggregate_id VARCHAR(255),
-        aggregate_version INT,
-        event_name VARCHAR(255),
-        data TEXT
-    );
-
-    "
-    |> pgo.execute(db, [], dynamic.dynamic)
-
-  let assert Ok(_) =
-    "
-    CREATE INDEX IF NOT EXISTS idx_signal_events_aggregate_id ON signal_event_store (aggregate_id);
-    "
-    |> pgo.execute(db, [], dynamic.dynamic)
-
-  let assert Ok(_) =
-    "
-    CREATE TABLE IF NOT EXISTS signal_document_store (
-        id SERIAL PRIMARY KEY,
-        projection_id VARCHAR(255),
-        projection_name VARCHAR(255),
-        projection_version INT
-        data TEXT
-    );
-
-    "
-    |> pgo.execute(db, [], dynamic.dynamic)
-
-  let assert Ok(_) =
-    "
-    CREATE INDEX IF NOT EXISTS idx_signal_projection_id ON signal_projection_store (projection_id);
-    "
-    |> pgo.execute(db, [], dynamic.dynamic)
+    [
+      "
+      CREATE TABLE IF NOT EXISTS signal_event_store (
+          id SERIAL PRIMARY KEY,
+          aggregate_id VARCHAR(255),
+          aggregate_version INT,
+          event_name VARCHAR(255),
+          data TEXT
+          );
+          ",
+      "CREATE INDEX IF NOT EXISTS idx_signal_aggregate_id ON signal_event_store (aggregate_id);",
+      "
+      CREATE TABLE IF NOT EXISTS signal_document_store (
+          id SERIAL PRIMARY KEY,
+          projection_id VARCHAR(255),
+          projection_name VARCHAR(255),
+          projection_version INT,
+          data TEXT
+      );
+      ",
+      "CREATE INDEX IF NOT EXISTS idx_signal_projection_id ON signal_document_store (projection_id);",
+      "ALTER TABLE signal_event_store ADD COLUMN IF NOT EXISTS aggregate_name VARCHAR(255);",
+      "ALTER TABLE signal_event_store ADD COLUMN IF NOT EXISTS timestamp VARCHAR(255);",
+    ]
+    |> list.map(fn(q) { pgo.execute(q, db, [], dynamic.dynamic) })
+    |> result.all()
 }
 
 // TODO Projection stuff is likely to move to Signal core at some point when signal starts supporting projections natively
@@ -88,13 +78,15 @@ type PgoEvent {
     aggregate_version: Int,
     event_name: String,
     data: String,
+    aggregate_name: String,
+    timestamp: String,
   )
 }
 
 fn pgo_handler(
   db: pgo.Connection,
   event_encoder: fn(event) -> String,
-  event_decoder: fn(String, String) -> event,
+  event_decoder: fn(String, String) -> Result(event, String),
 ) {
   fn(msg: signal.StoreMessage(event), _state: Nil) {
     case msg {
@@ -108,12 +100,11 @@ fn pgo_handler(
       signal.GetStoredEvents(s, aggregate_id) -> {
         case get_stored_events(db, aggregate_id) {
           pgo.Returned(count, rows) if count > 0 -> {
-            let assert Ok(events) =
-              result.all(
-                list.map(rows, fn(row) { decode_event(row, event_decoder) }),
-              )
+            let events =
+              list.map(rows, fn(row) { decode_event(row, event_decoder) })
+              |> result.all()
 
-            process.send(s, Ok(events))
+            process.send(s, events)
             actor.continue(Nil)
           }
           _ -> {
@@ -148,34 +139,44 @@ fn to_pgo_event(event: signal.Event(event), encode: fn(event) -> String) {
     aggregate_version: event.aggregate_version,
     event_name: event.event_name,
     data: encode(event.data),
+    aggregate_name: event.aggregate_name,
+    timestamp: event.timestamp,
   )
 }
 
-fn decode_event(event: dynamic.Dynamic, decode: fn(String, String) -> event) {
-  case
+fn decode_event(
+  event: dynamic.Dynamic,
+  decode: fn(String, String) -> Result(event, String),
+) {
+  use decoded <- result.try(
     dynamic.from(event)
-    |> dynamic.decode4(
+    |> dynamic.decode6(
       PgoEvent,
       dynamic.element(0, dynamic.string),
       dynamic.element(1, dynamic.int),
       dynamic.element(2, dynamic.string),
       dynamic.element(3, dynamic.string),
+      dynamic.element(4, dynamic.string),
+      dynamic.element(5, dynamic.string),
     )
-  {
-    Ok(event) ->
-      Ok(signal.Event(
-        aggregate_id: event.aggregate_id,
-        aggregate_version: event.aggregate_version,
-        event_name: event.event_name,
-        data: decode(event.event_name, event.data),
-      ))
-    Error(_) -> Error("Could not decode event")
-  }
+    |> result.replace_error("Could not decode event"),
+  )
+
+  use user_event <- result.try(decode(decoded.event_name, decoded.data))
+
+  Ok(signal.Event(
+    aggregate_id: decoded.aggregate_id,
+    aggregate_version: decoded.aggregate_version,
+    event_name: decoded.event_name,
+    data: user_event,
+    aggregate_name: decoded.aggregate_name,
+    timestamp: decoded.timestamp,
+  ))
 }
 
 fn store_event(event: PgoEvent, db: pgo.Connection) {
   let assert Ok(_) =
-    "INSERT INTO signal_event_store (aggregate_id, aggregate_version, event_name, data) VALUES ($1, $2, $3, $4)"
+    "INSERT INTO signal_event_store (aggregate_id, aggregate_version, event_name, data, aggregate_name, timestamp) VALUES ($1, $2, $3, $4, $5, $6)"
     |> pgo.execute(
       db,
       [
@@ -183,6 +184,8 @@ fn store_event(event: PgoEvent, db: pgo.Connection) {
         pgo.int(event.aggregate_version),
         pgo.text(event.event_name),
         pgo.text(event.data),
+        pgo.text(event.aggregate_name),
+        pgo.text(event.timestamp),
       ],
       dynamic.dynamic,
     )
@@ -190,7 +193,7 @@ fn store_event(event: PgoEvent, db: pgo.Connection) {
 
 fn get_stored_events(db: pgo.Connection, aggregate_id: String) {
   let assert Ok(rows) =
-    "SELECT aggregate_id, aggregate_version, event_name, data FROM signal_event_store WHERE aggregate_id = $1"
+    "SELECT aggregate_id, aggregate_version, event_name, data, aggregate_name, timestamp FROM signal_event_store WHERE aggregate_id = $1 ORDER BY aggregate_version ASC"
     |> pgo.execute(db, [pgo.text(aggregate_id)], dynamic.dynamic)
 
   rows
